@@ -1,1 +1,84 @@
 @import "tailwindcss";
+
+/*
+ * Brand tokens. The blue-* scale IS the primary color: Settings › Branding overrides
+ * --color-blue-* (and --color-accent) on <html> — see src/lib/branding.ts — so every blue-*
+ * utility follows the saved branding. Use blue-* for primary UI and emerald / amber / red for
+ * status; those semantic scales are never rebranded. Accent is for brand highlights only.
+ */
+@theme {
+  --color-accent: var(--color-blue-600);
+}
+
+@theme {
+  --animate-shake: shake 0.35s ease-in-out;
+  @keyframes shake {
+    20%, 60% { transform: translateX(-8px); }
+    40%, 80% { transform: translateX(8px); }
+  }
+
+  --animate-sheet-up: sheet-up 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+  --animate-sheet-down: sheet-down 0.22s ease-in forwards;
+  --animate-fade-in: fade-in 0.2s ease-out;
+  --animate-fade-out: fade-out 0.22s ease-in forwards;
+  @keyframes sheet-up { from { transform: translateY(100%); } }
+  @keyframes sheet-down { to { transform: translateY(100%); } }
+  @keyframes fade-in { from { opacity: 0; } }
+  @keyframes fade-out { to { opacity: 0; } }
+
+  /* Eases toward 90% so a slow start never shows a full bar that is still waiting. */
+  --animate-splash-progress: splash-progress 2.4s cubic-bezier(0.2, 0.8, 0.3, 1) forwards;
+  --animate-pop-in: pop-in 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+  @keyframes splash-progress { from { width: 0; } to { width: 90%; } }
+  @keyframes pop-in { from { transform: scale(0.6); opacity: 0; } }
+}
+
+/*
+ * Scan QR on Android: the camera preview is drawn behind the (now transparent) WebView, so the page goes
+ * see-through and only the scanner overlay, which is portaled into <body>, stays visible.
+ */
+html.qr-scanning,
+html.qr-scanning body {
+  background: transparent !important;
+}
+html.qr-scanning #root {
+  visibility: hidden;
+}
+
+@page {
+  size: 80mm auto;
+  margin: 0;
+}
+
+/*
+ * Date/time fields (components/Controls.tsx DateInput). Chromium (Android WebView, Chrome, Edge) draws its own
+ * picker icon and centres the value; hide the icon but stretch it over the whole field so any tap still opens
+ * the picker, left-align the value, and drop the extra inner padding so height matches the other fields.
+ */
+@layer components {
+  .picker-input::-webkit-calendar-picker-indicator {
+    position: absolute;
+    inset: 0;
+    width: auto;
+    height: auto;
+    margin: 0;
+    padding: 0;
+    opacity: 0;
+    background: transparent;
+    cursor: pointer;
+  }
+  .picker-input::-webkit-date-and-time-value {
+    margin: 0;
+    text-align: left;
+  }
+  .picker-input::-webkit-datetime-edit {
+    padding: 0;
+  }
+  .picker-input::-webkit-inner-spin-button,
+  .picker-input::-webkit-clear-button {
+    display: none;
+  }
+  .picker-input:disabled::-webkit-calendar-picker-indicator {
+    cursor: not-allowed;
+  }
+}

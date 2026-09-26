@@ -11,6 +11,7 @@ const isWeb = Capacitor.getPlatform() === 'web'
 let db: SQLiteDBConnection | null = null
 let ready: Promise<SQLiteDBConnection> | null = null
 let txQueue: Promise<unknown> = Promise.resolve()
+let pendingUserVersion: number | null = null
 
 async function initWebStore() {
   defineJeepSqlite(window)
@@ -38,6 +39,11 @@ async function open(): Promise<SQLiteDBConnection> {
       : await sqlite.createConnection(DB_NAME, false, 'no-encryption', 1, false)
   await conn.open()
   await conn.execute('PRAGMA foreign_keys = ON', false)
+  if (pendingUserVersion !== null) {
+    // A restored file carries its own schema version; migrate() then upgrades older backups.
+    await conn.execute(`PRAGMA user_version = ${pendingUserVersion}`, false)
+    pendingUserVersion = null
+  }
   await migrate(conn)
   if (isWeb) await sqlite.saveToStore(DB_NAME)
   db = conn
@@ -109,4 +115,24 @@ export async function closeDb() {
   if (db) await sqlite.closeConnection(DB_NAME, false)
   db = null
   ready = null
+}
+
+/** Full database as plugin JSON text (all tables, schema and data). */
+export async function exportDatabase(): Promise<string> {
+  const conn = await initDb()
+  const res = await conn.exportToJson('full')
+  if (!res.export) throw new Error('Database export failed.')
+  return JSON.stringify(res.export)
+}
+
+/** Replaces the whole database with the given plugin JSON. Callers must have made a safety backup. */
+export async function replaceDatabase(dataJson: string, schemaVersion: number) {
+  if (!(await sqlite.isJsonValid(dataJson)).result) throw new Error('Backup data is not valid.')
+  await txQueue.catch(() => {}) // let in-flight transactions finish
+  await closeDb()
+  await sqlite.importFromJson(dataJson)
+  pendingUserVersion = schemaVersion
+  await initDb()
+  const users = await queryOne<{ n: number }>('SELECT COUNT(*) AS n FROM users')
+  if (!users?.n) throw new Error('Restored data has no users.')
 }
