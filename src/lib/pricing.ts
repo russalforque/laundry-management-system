@@ -1,5 +1,6 @@
 import type { Inclusion, OrderItemRow, PricingMethod, PricingType, Service } from '../types'
 import { formatPeso } from './money'
+import { formatNumber, parseNumber } from './number'
 
 export const TYPE_LABEL: Record<PricingType, string> = {
   per_load: 'Per Load',
@@ -21,13 +22,13 @@ export const typeOf = (x: { pricing_type?: PricingType | null; pricing_method: P
 
 export const kindOf = (s: Pick<Service, 'is_addon' | 'is_package'>) => (s.is_package ? 'package' : s.is_addon ? 'addon' : 'service')
 
-const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
+const plural = (n: number, one: string, many: string) => `${formatNumber(n)} ${n === 1 ? one : many}`
 
 /** "2 loads", "3.5 kg", "1 item", "3 pcs"; fixed-price lines read "Flat rate". */
 export function qtyText(type: PricingType, q: number): string {
   switch (type) {
     case 'per_load': return plural(q, 'load', 'loads')
-    case 'per_kg': return `${q} kg`
+    case 'per_kg': return `${formatNumber(q)} kg`
     case 'per_item': return plural(q, 'item', 'items')
     case 'per_quantity': return plural(q, 'pc', 'pcs')
     default: return 'Flat rate'
@@ -36,8 +37,8 @@ export function qtyText(type: PricingType, q: number): string {
 
 /** The load_max_kg setting as a number; blank or invalid = no weight rule. */
 export const parseMaxKg = (s: string | undefined | null): number | null => {
-  const n = Number(s)
-  return s?.trim() && Number.isFinite(n) && n > 0 ? n : null
+  const n = parseNumber(s) ?? NaN // "1,000" from an input is 1000
+  return Number.isFinite(n) && n > 0 ? n : null
 }
 
 export const maxKgOf = (s: Pick<Service, 'max_kg'>, defaultMaxKg: number | null) => s.max_kg ?? defaultMaxKg
@@ -174,7 +175,7 @@ export function priceCart(services: Service[], inclusions: Inclusion[], items: C
  */
 export function itemQtyLine(i: OrderItemRow, times = '×'): string {
   const t = typeOf(i)
-  const w = i.weight_kg ? ` (${i.weight_kg} kg)` : ''
+  const w = i.weight_kg ? ` (${formatNumber(i.weight_kg)} kg)` : ''
   const base = t === 'fixed' ? 'Fixed price' : `${qtyText(t, i.quantity)}${w} ${times} ${formatPeso(i.unit_price_cents)}${TYPE_UNIT[t]}`
   if (!(i.included_qty > 0)) return base
   return `${base} · ${i.included_qty >= i.quantity ? 'included' : `${i.included_qty} included`}`

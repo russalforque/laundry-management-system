@@ -17,7 +17,7 @@ const TILE: Record<OrderStatus, { icon: ReactNode; cls: string }> = {
 }
 
 /** "Today, 2:30 PM", "Yesterday, 9:05 AM" or "Sep 20, 2:30 PM" (year only when it differs). */
-function when(iso: string) {
+export function when(iso: string) {
   const d = new Date(iso)
   const t = d.toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit' })
   const today = new Date()

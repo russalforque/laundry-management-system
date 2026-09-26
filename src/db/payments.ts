@@ -2,6 +2,7 @@ import { paymentStatus } from '../lib/orders'
 import { requirePermission, sessionCan } from '../lib/permissions'
 import type { OrderStatus, PaymentMethod } from '../types'
 import { query, transaction } from './client'
+import { ORDER_CUSTOMER_NAME } from './customers'
 import { OPEN_SHIFT_ID, requireOpenStore } from './shifts'
 
 const METHODS: PaymentMethod[] = ['cash', 'gcash', 'other']
@@ -20,7 +21,7 @@ export interface PaymentInput {
 /** Validates cash tendered for a payment; returns the value to store (NULL unless cash). */
 export function checkTendered(method: PaymentMethod, amountCents: number, tenderedCents: number | null | undefined): number | null {
   if (method !== 'cash' || tenderedCents == null) return null
-  if (!Number.isInteger(tenderedCents) || tenderedCents < amountCents) throw new Error('Cash received cannot be less than the amount paid.')
+  if (!Number.isInteger(tenderedCents) || tenderedCents < amountCents) throw new Error('Amount Received cannot be less than the Amount Paid.')
   return tenderedCents
 }
 
@@ -34,7 +35,6 @@ export async function addPayment(input: PaymentInput): Promise<number> {
   return transaction(async (tx) => {
     if (!Number.isInteger(input.amountCents) || input.amountCents <= 0) throw new Error('Enter a payment amount above zero.')
     if (!METHODS.includes(input.method)) throw new Error('Invalid payment method.')
-    await requireOpenStore(tx)
     const [order] = await tx.query<{ total_cents: number; status: OrderStatus }>(
       'SELECT total_cents, status FROM orders WHERE id = ?',
       [input.orderId],
@@ -47,8 +47,9 @@ export async function addPayment(input: PaymentInput): Promise<number> {
       throw new Error('This order was just updated (payment may already be recorded). Check the payment history before trying again.')
     const balance = order.total_cents - paid
     if (balance <= 0) throw new Error('This order is already fully paid.')
-    if (input.amountCents > balance) throw new Error('Payment is more than the remaining balance.')
+    if (input.amountCents > balance) throw new Error('Payment is more than the Balance Due.')
     const tendered = checkTendered(input.method, input.amountCents, input.tenderedCents)
+    await requireOpenStore(tx)
 
     // Counted in the store shift that is open when the money is received (a Pay Later balance paid today counts today).
     const { lastId } = await tx.run(`INSERT INTO payments (order_id, amount_cents, method, paid_at, user_id, reference, tendered_cents, shift_id) VALUES (?,?,?,?,?,?,?,${OPEN_SHIFT_ID})`, [
@@ -141,7 +142,7 @@ export async function listPayments(f: { userId?: number; date?: string } = {}, l
     params.push(start.toISOString(), end.toISOString())
   }
   return query<PaymentHistoryRow>(
-    `SELECT p.id, p.order_id, o.order_number, c.full_name AS customer_name, p.amount_cents, p.method, p.paid_at, p.reference,
+    `SELECT p.id, p.order_id, o.order_number, ${ORDER_CUSTOMER_NAME} AS customer_name, p.amount_cents, p.method, p.paid_at, p.reference,
             u.full_name AS user_name
      FROM payments p JOIN orders o ON o.id = p.order_id JOIN customers c ON c.id = o.customer_id JOIN users u ON u.id = p.user_id
      ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY p.paid_at DESC, p.id DESC LIMIT ?`,

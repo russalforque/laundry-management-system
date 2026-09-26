@@ -31,7 +31,7 @@ export const PRINTER_AUTO_CONNECT = 'printer_auto_connect'
 export const canBluetoothPrint = () => Capacitor.getPlatform() === 'android'
 
 export class NoPrinterError extends Error {
-  constructor() { super('No receipt printer found. Turn the printer on, then set it up in Settings › Receipt Printer.') }
+  constructor() { super('No receipt printer found. Turn the printer on, then connect it on the Printer page.') }
 }
 
 export const listPairedDevices = async (silent = false) => (await ThermalPrinter.listPaired({ silent })).devices

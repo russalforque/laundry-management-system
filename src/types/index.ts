@@ -77,10 +77,14 @@ export interface OrderRow {
   payment_status: PaymentStatus
   status: OrderStatus
   notes: string
+  /** Past walk-in orders only: name/phone given at the counter ('' otherwise; new orders never set them). */
+  guest_name: string
+  guest_contact: string
 }
 
 export type MachineType = 'washer' | 'dryer'
-export type MachineStatus = 'available' | 'in_use' | 'out_of_service'
+/** Available → In Use (timer running) → Done (timer over, laundry still inside) → Available after Mark as Unloaded. out_of_service = Inactive. */
+export type MachineStatus = 'available' | 'in_use' | 'done' | 'out_of_service'
 
 export interface Machine {
   id: number
@@ -88,11 +92,15 @@ export interface Machine {
   type: MachineType
   notes: string
   out_of_service: number
+  /** Preset cycle length used every time this machine is started. */
+  cycle_minutes: number
   /** Open assignment, if any (joined in by listMachines). */
   order_id: number | null
   order_number: string | null
   customer_name: string | null
   started_at: string | null
+  duration_minutes: number | null
+  expected_end_at: string | null
 }
 
 export interface MachineAssignment {
@@ -104,11 +112,15 @@ export interface MachineAssignment {
   started_at: string
   ended_at: string | null
   end_reason: 'finished' | 'changed' | 'status' | null
+  /** Timer snapshot taken at start; null on assignments made before machine timers. */
+  duration_minutes: number | null
+  expected_end_at: string | null
   user_name: string | null
 }
 
 export interface OrderItemRow {
   id: number
+  service_id: number
   service_name: string
   pricing_method: PricingMethod
   /** null on orders made before pricing types existed. */

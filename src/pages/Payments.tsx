@@ -234,7 +234,7 @@ export default function Payments() {
     <div className="mx-auto max-w-3xl space-y-4 pb-6">
       <div className="md:hidden"><AppHeader /></div>
       <header>
-        <h1 className="text-3xl font-bold tracking-tight text-slate-900">Payment History</h1>
+        <h1 className="text-2xl font-bold tracking-tight text-slate-900">Payments</h1>
         <p className="mt-1 text-sm text-slate-500">{all ? 'Payments received by every employee' : 'Payments you received'}</p>
       </header>
 
@@ -270,7 +270,7 @@ export default function Payments() {
         </div>
 
         {all && showFilters && (
-          <label className={`${card} block p-3 text-xs font-medium text-slate-500`}>
+          <label className={`${card} block animate-reveal p-3 text-xs font-medium text-slate-500`}>
             Received by
             <span className="mt-1 block">
               <Select className={fieldCls} value={employee} onChange={(e) => setEmployee(e.target.value)}>
@@ -286,7 +286,7 @@ export default function Payments() {
 
       {error ? (
         <div className={`${card} pb-6`}>
-          <EmptyCard icon={I.wallet} title="Couldn't load payments" text="Check the app and try again." />
+          <EmptyCard icon={I.wallet} title="Couldn't load payments" text="Please try again. If this keeps happening, close and reopen the app." />
           <div className="flex justify-center">
             <button type="button" onClick={load} className="inline-flex min-h-11 items-center gap-2 rounded-xl px-5 font-semibold text-blue-700 active:bg-blue-50">
               <Icon className="h-5 w-5">{I.refresh}</Icon>Try again

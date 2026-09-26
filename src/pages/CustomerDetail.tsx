@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { Avatar } from '../components/Avatar'
 import { I, Icon } from '../components/Icons'
@@ -15,7 +15,7 @@ import { ActiveBadge, CustomerForm } from './Customers'
 const RECENT = 3
 const card = 'rounded-2xl border border-slate-200/80 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.05)]'
 
-const sinceDate = (iso: string) => new Date(iso).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })
+const sinceDate = (iso: string) => new Date(iso).toLocaleDateString('en-PH', { month: 'short', year: 'numeric' })
 
 /** "Today", "Yesterday", "5 days ago", "3 wks ago", then a date. */
 function lastVisit(iso: string | null) {
@@ -50,43 +50,65 @@ function SectionTitle({ title, action }: { title: string; action?: ReactNode }) 
   )
 }
 
-/** Contact row: icon, value, and a one-tap action (call, map) or an "Add" prompt when empty. */
-function ContactRow({ icon, label, value, empty, href, actionLabel, actionIcon, onAdd }: {
-  icon: ReactNode; label: string; value: string; empty: string; href?: string | null; actionLabel?: string; actionIcon?: ReactNode; onAdd: () => void
-}) {
+/** Details row: icon, label and value, or an "Add" prompt when the field is empty. */
+function DetailRow({ icon, label, value, empty, onAdd }: { icon: ReactNode; label: string; value: string; empty: string; onAdd: () => void }) {
   return (
-    <li className="flex min-h-16 items-center gap-3 px-4 py-2">
-      <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-slate-100 text-slate-500"><Icon className="h-5 w-5">{icon}</Icon></span>
+    <li className="flex min-h-16 items-center gap-3 px-4 py-3">
+      <Icon className="h-5 w-5 shrink-0 text-slate-400">{icon}</Icon>
       <span className="min-w-0 flex-1">
-        <span className="block text-xs text-slate-500">{label}</span>
+        <span className="block text-xs font-medium text-slate-500">{label}</span>
         <span className={`block wrap-break-word text-[15px] ${value ? 'text-slate-900' : 'text-slate-400'}`}>{value || empty}</span>
       </span>
-      {value && href ? (
-        <a href={href} aria-label={`${actionLabel}: ${value}`} className="grid size-11 shrink-0 place-items-center rounded-full bg-blue-50 text-blue-600 active:bg-blue-100">
-          <Icon className="h-5 w-5">{actionIcon}</Icon>
-        </a>
-      ) : !value ? (
+      {!value && (
         <button type="button" onClick={onAdd} className="-mr-2 min-h-11 shrink-0 rounded-xl px-3 text-sm font-semibold text-blue-600 active:bg-blue-50">Add</button>
-      ) : null}
+      )}
     </li>
   )
 }
 
-function Stat({ value, label, tone = 'text-slate-900' }: { value: string; label: string; tone?: string }) {
+/** One column of the stats band in the profile card. */
+function Stat({ value, label }: { value: string; label: string }) {
   return (
-    <div className="min-w-0 rounded-xl bg-white px-3 py-2.5 text-center shadow-sm">
-      <div className={`truncate text-lg font-bold tabular-nums ${tone}`}>{value}</div>
+    <div className="min-w-0 px-2 py-3 text-center">
+      <div className="truncate text-lg font-bold tabular-nums text-slate-900">{value}</div>
       <div className="truncate text-xs text-slate-500">{label}</div>
     </div>
   )
 }
 
-/** Round quick-action button under the profile (Call, Text, …). */
-function QuickAction({ href, icon, label }: { href: string; icon: ReactNode; label: string }) {
-  return (
-    <a href={href} className="flex min-h-12 flex-1 items-center justify-center gap-2 rounded-xl bg-white px-3 text-sm font-semibold text-blue-700 shadow-sm active:bg-blue-100">
+/**
+ * Contact action tile (Call, Text, Map). With a link it acts; without one it becomes a dashed
+ * "Add …" prompt that opens the edit sheet, so the row keeps its shape either way.
+ */
+function ActionTile({ href, icon, label, addLabel, onAdd }: { href: string | null; icon: ReactNode; label: string; addLabel: string; onAdd: () => void }) {
+  const cls = 'flex min-h-16 flex-col items-center justify-center gap-1 rounded-xl px-2 py-2 text-xs font-semibold transition-colors'
+  return href ? (
+    <a href={href} className={`${cls} bg-blue-50 text-blue-700 active:bg-blue-100`}>
       <Icon className="h-5 w-5">{icon}</Icon>{label}
     </a>
+  ) : (
+    <button type="button" onClick={onAdd} className={`${cls} border border-dashed border-slate-300 text-slate-500 active:bg-slate-50`}>
+      <Icon className="h-5 w-5">{I.plus}</Icon>{addLabel}
+    </button>
+  )
+}
+
+/** A tappable row in the "Needs attention" card. */
+function AttentionRow({ icon, tone, title, detail, trailing, onClick }: {
+  icon: ReactNode; tone: string; title: string; detail: string; trailing?: ReactNode; onClick: () => void
+}) {
+  return (
+    <li>
+      <button type="button" onClick={onClick} className="flex min-h-16 w-full items-center gap-3 px-4 py-3 text-left active:bg-slate-50">
+        <span className={`grid size-10 shrink-0 place-items-center rounded-xl ${tone}`}><Icon className="h-5 w-5">{icon}</Icon></span>
+        <span className="min-w-0 flex-1">
+          <span className="block font-semibold text-slate-900">{title}</span>
+          <span className="block text-xs text-slate-500">{detail}</span>
+        </span>
+        {trailing}
+        <Icon className="-mr-1 h-5 w-5 shrink-0 text-slate-300">{I.chevron}</Icon>
+      </button>
+    </li>
   )
 }
 
@@ -103,6 +125,7 @@ export default function CustomerDetail() {
   const { approve, sheet } = useAdminPin()
   const [error, setError] = useState('')
   const [loadError, setLoadError] = useState('')
+  const ordersRef = useRef<HTMLElement>(null)
 
   const load = useCallback(async () => {
     try {
@@ -143,7 +166,7 @@ export default function CustomerDetail() {
       await deleteCustomer(id)
       navigate('/customers', { replace: true })
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed.')
+      setError(e instanceof Error ? e.message : 'Something went wrong. Please try again.')
     }
   }
 
@@ -152,7 +175,7 @@ export default function CustomerDetail() {
       <button type="button" onClick={goBack} aria-label="Back" className="-ml-2 grid size-11 place-items-center rounded-full text-slate-800 active:bg-slate-200">
         <Icon className="h-6 w-6">{I.back}</Icon>
       </button>
-      <h1 className="min-w-0 flex-1 truncate text-2xl font-bold tracking-tight text-slate-900">Customer</h1>
+      <h1 className="min-w-0 flex-1 truncate text-lg font-semibold text-slate-900">Customer</h1>
       {customer && !walkIn && (
         <button type="button" onClick={() => setEditing(true)} className="inline-flex min-h-11 items-center gap-1.5 rounded-full px-3 text-sm font-semibold text-blue-600 active:bg-blue-50">
           <Icon className="h-4 w-4">{I.pencil}</Icon>Edit
@@ -166,7 +189,7 @@ export default function CustomerDetail() {
           {menu && (
             <>
               <div className="fixed inset-0 z-20" onClick={() => setMenu(false)} aria-hidden />
-              <div role="menu" className="absolute right-0 top-12 z-30 w-60 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
+              <div role="menu" className="absolute right-0 origin-top-right animate-menu-in top-12 z-30 w-60 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
                 <button role="menuitem" onClick={() => { setMenu(false); setEditing(true) }} className="flex min-h-12 w-full items-center gap-3 px-4 text-sm text-slate-700 active:bg-slate-50">
                   <Icon className="h-5 w-5 text-slate-500">{I.pencil}</Icon>Edit customer
                 </button>
@@ -201,9 +224,17 @@ export default function CustomerDetail() {
             </button>
           </div>
         ) : (
-          <div className="space-y-4" aria-busy="true" aria-label="Loading customer">
-            <div className="h-56 animate-pulse rounded-2xl bg-slate-200/60 motion-reduce:animate-none" />
-            <div className="h-32 animate-pulse rounded-2xl bg-slate-200/60 motion-reduce:animate-none" />
+          <div className="space-y-4 motion-safe:animate-pulse" aria-busy="true" aria-label="Loading customer">
+            {/* Mirrors the loaded layout so nothing jumps when data arrives */}
+            <div className={`${card} p-5`}>
+              <div className="mx-auto size-20 rounded-full bg-slate-200/70" />
+              <div className="mx-auto mt-3 h-6 w-40 rounded-lg bg-slate-200/70" />
+              <div className="mx-auto mt-2 h-4 w-28 rounded-lg bg-slate-200/70" />
+              <div className="mt-5 grid grid-cols-3 gap-2">
+                {[0, 1, 2].map((i) => <div key={i} className="h-16 rounded-xl bg-slate-200/70" />)}
+              </div>
+            </div>
+            <div className="h-24 rounded-2xl bg-slate-200/60" />
           </div>
         )}
       </div>
@@ -214,7 +245,8 @@ export default function CustomerDetail() {
       <div className="mx-auto max-w-3xl space-y-4">
         {header}
         <div className={`${card} px-6 py-10 text-center`}>
-          <p className="font-semibold text-slate-900">Customer not found</p>
+          <span className="mx-auto grid size-14 place-items-center rounded-full bg-slate-100 text-slate-400"><Icon className="h-7 w-7">{I.user}</Icon></span>
+          <p className="mt-3 font-semibold text-slate-900">Customer not found</p>
           <p className="mt-1 text-sm text-slate-500">They may have been deleted, or the link is wrong.</p>
           <Link to="/customers" className="mt-3 inline-flex min-h-11 items-center font-semibold text-blue-700">Back to customers</Link>
         </div>
@@ -227,15 +259,22 @@ export default function CustomerDetail() {
   const openCount = orders.filter(isOpen).length
   const unpaidCount = orders.filter(isUnpaid).length
   const readyCount = orders.filter((o) => o.status === 'ready').length
+  const owed = stats?.outstanding_cents ?? 0
   const filtered = filter === 'open' ? orders.filter(isOpen) : filter === 'unpaid' ? orders.filter(isUnpaid) : orders
   const shown = showAll ? filtered : filtered.slice(0, RECENT)
   const edit = () => setEditing(true)
   const pickFilter = (f: OrderFilter) => { setFilter(f); setShowAll(false) }
+  /** From the attention card: filter the list, then bring it into view. */
+  const jumpTo = (f: OrderFilter) => {
+    pickFilter(f)
+    const smooth = !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    ordersRef.current?.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'start' })
+  }
 
   const FILTERS: { id: OrderFilter; label: string; count: number }[] = [
     { id: 'all', label: 'All', count: orders.length },
     { id: 'open', label: 'In shop', count: openCount },
-    { id: 'unpaid', label: 'Unpaid', count: unpaidCount },
+    { id: 'unpaid', label: 'Balance due', count: unpaidCount },
   ]
   const emptyText: Record<OrderFilter, string> = {
     all: 'No orders yet. Tap New Order to start one.',
@@ -244,59 +283,72 @@ export default function CustomerDetail() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6">
+    <div className="mx-auto max-w-3xl space-y-5">
       {header}
 
       {error && <p role="alert" className="rounded-xl bg-red-50 px-4 py-2.5 text-sm font-medium text-red-700">{error}</p>}
 
-      {/* Profile: who they are, how to reach them, and where they stand */}
-      <section className="rounded-2xl bg-blue-50 p-4 sm:p-5">
-        <div className="flex items-center gap-4">
-          <Avatar name={customer.full_name} tone="bg-white text-blue-600" className="size-18 text-2xl ring-4 ring-blue-100" />
-          <div className="min-w-0 flex-1">
-            <div className="flex items-start justify-between gap-2">
-              <h2 className="min-w-0 wrap-break-word text-xl font-bold leading-tight text-slate-900">{customer.full_name}</h2>
-              {!walkIn && <ActiveBadge active={active} />}
-            </div>
-            <p className="mt-1 truncate text-sm text-slate-600">
-              {walkIn ? 'Shared record for walk-in orders' : customer.contact || <span className="text-slate-400">No phone number</span>}
-            </p>
-            <p className="mt-0.5 text-xs text-slate-500">{customer.customer_code} · Since {sinceDate(customer.created_at)}</p>
+      {/* Profile: who they are, one-tap ways to reach them, and their history at a glance */}
+      <section aria-label="Profile" className={`${card} overflow-hidden`}>
+        <div className="px-4 pb-4 pt-6 text-center sm:px-6">
+          <Avatar name={customer.full_name} className="mx-auto size-20 text-2xl ring-4 ring-white shadow-sm" />
+          <h2 className="mt-3 wrap-break-word text-2xl font-bold leading-tight tracking-tight text-slate-900">{customer.full_name}</h2>
+          <div className="mt-1.5 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-sm text-slate-500">
+            {!walkIn && <ActiveBadge active={active} />}
+            <span className="font-medium tabular-nums text-slate-600">{customer.customer_code}</span>
+            <span aria-hidden className="text-slate-300">•</span>
+            <span>Since {sinceDate(customer.created_at)}</span>
           </div>
+          {walkIn && <p className="mt-2 text-sm text-slate-500">Past walk-in orders (no longer used for new orders)</p>}
+
+          {!walkIn && (
+            <div className="mt-5 grid grid-cols-3 gap-2">
+              <ActionTile href={phone && `tel:${phone}`} icon={I.phone} label="Call" addLabel="Add phone" onAdd={edit} />
+              <ActionTile href={phone && `sms:${phone}`} icon={I.message} label="Text" addLabel="Add phone" onAdd={edit} />
+              <ActionTile
+                href={customer.address ? `geo:0,0?q=${encodeURIComponent(customer.address)}` : null}
+                icon={I.pin} label="Map" addLabel="Add address" onAdd={edit}
+              />
+            </div>
+          )}
         </div>
 
-        {phone && !walkIn && (
-          <div className="mt-4 flex gap-2">
-            <QuickAction href={`tel:${phone}`} icon={I.phone} label="Call" />
-            <QuickAction href={`sms:${phone}`} icon={I.message} label="Text" />
-          </div>
-        )}
-
         {stats && (
-          <div className="mt-4 grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-3 divide-x divide-slate-100 border-t border-slate-100 bg-slate-50/60">
             <Stat value={String(stats.total_orders)} label="Orders" />
             <Stat value={formatPesoShort(stats.total_spent_cents)} label="Total billed" />
             <Stat value={lastVisit(stats.last_order_at)} label="Last order" />
           </div>
         )}
-
-        {stats && stats.outstanding_cents > 0 && (
-          <button
-            type="button"
-            onClick={() => pickFilter('unpaid')}
-            className="mt-3 flex w-full items-center gap-3 rounded-xl bg-white px-3 py-2.5 text-left text-sm shadow-sm active:bg-amber-50"
-          >
-            <span className="grid size-9 shrink-0 place-items-center rounded-full bg-amber-50 text-amber-600"><Icon className="h-5 w-5">{I.wallet}</Icon></span>
-            <span className="min-w-0 flex-1">
-              <span className="block font-semibold text-slate-900">Balance due</span>
-              <span className="block text-xs text-slate-500">On {unpaidCount} {unpaidCount === 1 ? 'order' : 'orders'} · tap to see them</span>
-            </span>
-            <span className="text-base font-bold tabular-nums text-amber-700">{formatPeso(stats.outstanding_cents)}</span>
-          </button>
-        )}
       </section>
 
-      {/* Care notes right under the profile: seen before anyone handles the laundry */}
+      {/* What the counter needs to act on now: pickups waiting and money owed */}
+      {(readyCount > 0 || owed > 0) && (
+        <section aria-label="Needs attention" className="space-y-2">
+          <SectionTitle title="Needs attention" />
+          <ul className={`${card} divide-y divide-slate-100 overflow-hidden`}>
+            {readyCount > 0 && (
+              <AttentionRow
+                icon={I.bag} tone="bg-blue-600 text-white"
+                title="Ready for pickup"
+                detail={`${readyCount} ${readyCount === 1 ? 'order is' : 'orders are'} waiting`}
+                onClick={() => jumpTo('open')}
+              />
+            )}
+            {owed > 0 && (
+              <AttentionRow
+                icon={I.wallet} tone="bg-amber-50 text-amber-600"
+                title="Balance due"
+                detail={`On ${unpaidCount} ${unpaidCount === 1 ? 'order' : 'orders'}`}
+                trailing={<span className="shrink-0 text-base font-bold tabular-nums text-amber-700">{formatPeso(owed)}</span>}
+                onClick={() => jumpTo('unpaid')}
+              />
+            )}
+          </ul>
+        </section>
+      )}
+
+      {/* Care notes: seen before anyone handles the laundry */}
       {!walkIn && customer.notes && (
         <button type="button" onClick={edit} className="flex w-full items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-left active:bg-amber-100">
           <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-white text-amber-600 shadow-sm"><Icon className="h-5 w-5">{I.note}</Icon></span>
@@ -309,22 +361,11 @@ export default function CustomerDetail() {
         </button>
       )}
 
-      {/* Orders — first after the profile, since that's what staff usually look up a customer for */}
-      <section className="space-y-3">
+      {/* Orders: what staff usually look a customer up for */}
+      <section ref={ordersRef} aria-label="Orders" className="scroll-mt-4 space-y-3">
         <SectionTitle title="Orders" />
-        {readyCount > 0 && (
-          <button
-            type="button"
-            onClick={() => pickFilter('open')}
-            className="flex w-full items-center gap-3 rounded-xl bg-blue-600 px-4 py-3 text-left text-sm font-semibold text-white shadow-sm shadow-blue-600/30 active:bg-blue-700"
-          >
-            <Icon className="h-5 w-5 shrink-0">{I.bag}</Icon>
-            <span className="flex-1">{readyCount === 1 ? '1 order is' : `${readyCount} orders are`} ready for pickup</span>
-            <Icon className="h-5 w-5 shrink-0 opacity-70">{I.chevron}</Icon>
-          </button>
-        )}
         {orders.length > 0 && (
-          <div role="tablist" aria-label="Filter orders" className="flex gap-2">
+          <div role="tablist" aria-label="Filter orders" className="grid grid-cols-3 gap-1 rounded-xl bg-slate-200/60 p-1">
             {FILTERS.map((f) => (
               <button
                 key={f.id}
@@ -332,18 +373,21 @@ export default function CustomerDetail() {
                 role="tab"
                 aria-selected={filter === f.id}
                 onClick={() => pickFilter(f.id)}
-                className={`inline-flex min-h-10 items-center gap-1.5 rounded-full px-4 text-sm font-medium transition-colors ${
-                  filter === f.id ? 'bg-blue-600 text-white shadow-sm shadow-blue-600/30' : 'border border-slate-200 bg-white text-slate-600 active:bg-slate-50'
+                className={`inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg px-2 text-sm font-medium transition-colors ${
+                  filter === f.id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 active:bg-white/60'
                 }`}
               >
-                {f.label}
-                <span className={`rounded-full px-1.5 text-xs tabular-nums ${filter === f.id ? 'bg-white/20' : 'bg-slate-100 text-slate-500'}`}>{f.count}</span>
+                <span className="truncate">{f.label}</span>
+                <span className={`rounded-full px-1.5 text-xs tabular-nums ${filter === f.id ? 'bg-blue-600 text-white' : 'bg-slate-300/60 text-slate-600'}`}>{f.count}</span>
               </button>
             ))}
           </div>
         )}
         {filtered.length === 0 ? (
-          <div className={`${card} px-6 py-8 text-center text-sm text-slate-500`}>{emptyText[filter]}</div>
+          <div className={`${card} px-6 py-8 text-center`}>
+            <span className="mx-auto grid size-12 place-items-center rounded-full bg-slate-100 text-slate-400"><Icon className="h-6 w-6">{I.orders}</Icon></span>
+            <p className="mt-3 text-sm text-slate-500">{emptyText[filter]}</p>
+          </div>
         ) : (
           <>
             <ul className="space-y-3">
@@ -360,32 +404,26 @@ export default function CustomerDetail() {
       </section>
 
       {!walkIn && (
-        <section className="space-y-3">
-          <SectionTitle title="Contact details" />
+        <section aria-label="Details" className="space-y-2">
+          <SectionTitle title="Details" />
           <ul className={`${card} divide-y divide-slate-100 overflow-hidden`}>
-            {/* A saved number already has Call / Text in the profile; only prompt when it's missing */}
-            {!customer.contact && <ContactRow icon={I.phone} label="Mobile" value="" empty="No phone number" onAdd={edit} />}
-            <ContactRow
-              icon={I.pin} label="Address" value={customer.address} empty="No address saved"
-              href={customer.address ? `geo:0,0?q=${encodeURIComponent(customer.address)}` : null} actionLabel="Open in maps" actionIcon={I.pin} onAdd={edit}
-            />
-            {/* Empty notes get a gentle prompt here; filled ones are shown up top */}
-            {!customer.notes && (
-              <ContactRow icon={I.note} label="Care notes" value="" empty='e.g. "No fabric softener"' onAdd={edit} />
-            )}
+            <DetailRow icon={I.phone} label="Mobile" value={customer.contact} empty="No phone number" onAdd={edit} />
+            <DetailRow icon={I.pin} label="Address" value={customer.address} empty="No address saved" onAdd={edit} />
+            {/* Filled notes are shown up top; empty ones get a gentle prompt here */}
+            {!customer.notes && <DetailRow icon={I.note} label="Care notes" value="" empty='e.g. "No fabric softener"' onAdd={edit} />}
           </ul>
         </section>
       )}
 
-      {/* Primary action, pinned above the phone nav */}
-      <div className="sticky bottom-0 z-10 -mx-4 -mb-4 border-t border-slate-200/70 bg-white/95 px-4 pb-4 pt-3 shadow-[0_-4px_20px_rgba(15,23,42,0.06)] backdrop-blur md:bottom-4 md:mx-0 md:mb-0 md:rounded-2xl md:border md:pb-3">
+      {/* Primary action, pinned above the phone nav. The legacy walk-in record only keeps past orders. */}
+      {!walkIn && <div className="sticky bottom-0 z-10 -mx-4 -mb-4 border-t border-slate-200/70 bg-white/95 px-4 pb-4 pt-3 shadow-[0_-4px_20px_rgba(15,23,42,0.06)] backdrop-blur md:bottom-4 md:mx-0 md:mb-0 md:rounded-2xl md:border md:pb-3">
         <Link
           to={`/orders/new?customer=${customer.id}`}
           className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-blue-600 text-base font-semibold text-white shadow-lg shadow-blue-600/25 transition active:bg-blue-700"
         >
-          <Icon className="h-5 w-5">{I.plus}</Icon>New Order{walkIn ? '' : ` for ${customer.full_name.split(' ')[0]}`}
+          <Icon className="h-5 w-5">{I.plus}</Icon>New Order for {customer.full_name.split(' ')[0]}
         </Link>
-      </div>
+      </div>}
 
       {editing && (
         <Sheet label="Edit customer" onClose={() => setEditing(false)}>

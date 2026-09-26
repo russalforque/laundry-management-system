@@ -108,19 +108,28 @@ async function loadDashboard(): Promise<Data> {
 
 // ---------- building blocks ----------
 
-function CardHeader({ title, action }: { title: string; action?: ReactNode }) {
+/**
+ * Section title that sits on the page background, above its content, instead of inside a card:
+ * one less box per section, and the same rhythm down the whole page.
+ */
+function SectionHeader({ title, count, action }: { title: string; count?: number; action?: ReactNode }) {
   return (
-    <div className="flex min-h-11 items-center justify-between gap-3">
-      <h2 className="text-base font-bold text-slate-900">{title}</h2>
+    <div className="flex min-h-11 items-center justify-between gap-3 px-1">
+      <h2 className="flex min-w-0 items-center gap-2 text-base font-bold text-slate-900">
+        <span className="truncate">{title}</span>
+        {count !== undefined && count > 0 && (
+          <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-bold tabular-nums text-blue-700">{count}</span>
+        )}
+      </h2>
       {action}
     </div>
   )
 }
 
-function ViewAll({ to }: { to: string }) {
+function ViewAll({ to, label = 'View all' }: { to: string; label?: string }) {
   return (
-    <Link to={to} className="-mr-2 inline-flex min-h-11 items-center rounded-lg px-2 text-sm font-semibold text-blue-600 active:bg-blue-50">
-      View All
+    <Link to={to} className="-mr-2 inline-flex min-h-11 shrink-0 items-center gap-0.5 rounded-lg px-2 text-sm font-semibold text-blue-600 active:bg-blue-50">
+      {label}<Icon className="h-4 w-4">{I.chevron}</Icon>
     </Link>
   )
 }
@@ -140,43 +149,55 @@ function EmptyState({ icon, title, text, action }: { icon: ReactNode; title: str
 
 // ---------- sections ----------
 
-/** Small linked figure inside the Today card. */
-function TodayFigure({ label, value, hint, to, tone = 'text-slate-900' }: { label: string; value: string; hint: string; to: string; tone?: string }) {
+/** One linked figure along the bottom of the Today hero. */
+function HeroStat({ label, value, to, alert }: { label: string; value: string; to: string; alert?: boolean }) {
   return (
-    <Link to={to} className="flex min-w-0 flex-col rounded-xl px-3 py-2.5 transition active:bg-slate-50">
-      <span className="text-xs font-medium text-slate-500">{label}</span>
-      <span className={`mt-0.5 truncate text-xl font-bold tabular-nums ${tone}`}>{value}</span>
-      <span className="truncate text-xs text-slate-500">{hint}</span>
+    <Link to={to} className="flex min-h-16 min-w-0 flex-col justify-center bg-blue-600 px-3 py-2.5 transition-colors active:bg-blue-700">
+      <span className="flex items-center gap-1.5 truncate text-xs font-medium text-blue-100">
+        {alert && <span className="size-2 shrink-0 rounded-full bg-amber-300" aria-hidden />}
+        {label}
+      </span>
+      <span className="mt-0.5 truncate text-lg font-bold tabular-nums text-white">{value}</span>
     </Link>
   )
 }
 
 /**
- * Today at a glance. Roles with financials lead with cash collected (the number that closes the day);
- * staff lead with orders taken, and see counts instead of money.
+ * Today at a glance, as the page's single visual anchor. Roles with financials lead with cash collected
+ * (the number that closes the day); staff lead with orders taken, and see counts instead of money.
  */
-function TodayCard({ s, financials, reportsTo }: { s: DashboardStats; financials: boolean; reportsTo: string }) {
+function TodayHero({ s, financials, reportsTo }: { s: DashboardStats; financials: boolean; reportsTo: string }) {
   const todayQs = `/orders?date=${ymd(new Date())}`
+  const due = s.outstanding_cents > 0
+  const stats = financials
+    ? [
+        { label: 'Orders today', value: String(s.today_orders), to: todayQs },
+        { label: 'Completed today', value: String(s.released_today), to: '/orders?status=released' },
+        { label: 'Balance Due', value: tilePeso(s.outstanding_cents), to: '/orders?payment=due', alert: due },
+      ]
+    : [
+        { label: 'Ready', value: String(s.ready), to: '/orders?status=ready' },
+        { label: 'Completed today', value: String(s.released_today), to: '/orders?status=released' },
+        { label: 'Not fully paid', value: String(s.unpaid_orders), to: '/orders?payment=due', alert: due },
+      ]
   return (
-    <section aria-label="Today" className={`${card} overflow-hidden`}>
-      <Link to={financials ? reportsTo : todayQs} className="block px-4 pb-3 pt-4 active:bg-slate-50">
-        <span className="text-sm font-medium text-slate-500">{financials ? 'Collected today' : 'Orders today'}</span>
-        <span className="mt-0.5 block truncate text-4xl font-bold tracking-tight text-slate-900">
+    <section aria-label="Today" className="min-w-0 overflow-hidden rounded-3xl bg-blue-600 text-white shadow-lg shadow-blue-600/25">
+      <Link to={financials ? reportsTo : todayQs} className="block px-5 pb-4 pt-5 transition-colors active:bg-blue-700">
+        <span className="flex items-center justify-between gap-2 text-sm font-medium text-blue-100">
+          {financials ? 'Collected today' : 'Orders taken today'}
+          <Icon className="h-5 w-5 text-blue-200">{I.chevron}</Icon>
+        </span>
+        <span className="mt-1 block truncate text-[clamp(2rem,10vw,2.75rem)] font-bold leading-tight tracking-tight tabular-nums">
           {financials ? formatPeso(s.today_collected_cents) : s.today_orders}
         </span>
-        <span className="mt-1 block text-sm text-slate-500">
-          {financials ? <>{plural(s.today_orders, 'order')} taken today · {tilePeso(s.today_sales_cents)} in value</> : `${plural(s.released_today, 'order')} released today`}
+        <span className="mt-1 block truncate text-sm text-blue-100">
+          {financials
+            ? <>{tilePeso(s.today_sales_cents)} in new orders today</>
+            : s.unpaid_orders ? `${plural(s.unpaid_orders, 'order')} not fully paid` : 'All orders are fully paid'}
         </span>
       </Link>
-      <div className="grid grid-cols-2 divide-x divide-slate-100 border-t border-slate-100 p-1">
-        <TodayFigure label="Released today" value={String(s.released_today)} hint="picked up" to="/orders?status=released" />
-        <TodayFigure
-          label="To collect"
-          value={financials ? tilePeso(s.outstanding_cents) : String(s.unpaid_orders)}
-          hint={s.unpaid_orders ? `from ${plural(s.unpaid_orders, 'order')}` : 'nothing outstanding'}
-          to="/orders?payment=due"
-          tone={s.outstanding_cents > 0 ? 'text-amber-700' : 'text-slate-900'}
-        />
+      <div className="grid grid-cols-3 gap-px border-t border-white/15 bg-white/15">
+        {stats.map((x) => <HeroStat key={x.label} {...x} />)}
       </div>
     </section>
   )
@@ -186,7 +207,7 @@ function TodayCard({ s, financials, reportsTo }: { s: DashboardStats; financials
 function ReadyRow({ o, onClick }: { o: OrderRow; onClick?: () => void }) {
   const pickup = pickupNote(o.expected_pickup)
   return (
-    <Link to={`/orders/${o.id}`} onClick={onClick} className="flex min-h-16 items-center gap-3 px-3 py-2.5 active:bg-blue-50/50">
+    <Link to={`/orders/${o.id}`} onClick={onClick} className="flex min-h-16 items-center gap-3 px-3 py-2.5 active:bg-slate-50">
       <Avatar name={o.customer_name} className="size-10 text-sm" />
       <span className="min-w-0 flex-1">
         <span className="block truncate font-semibold text-slate-900">{o.customer_name}</span>
@@ -196,7 +217,7 @@ function ReadyRow({ o, onClick }: { o: OrderRow; onClick?: () => void }) {
         </span>
       </span>
       {o.balance_cents > 0 ? (
-        <span className="shrink-0 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold tabular-nums text-amber-700">{formatPesoShort(o.balance_cents)} due</span>
+        <span className="shrink-0 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold tabular-nums text-amber-800">{formatPesoShort(o.balance_cents)} due</span>
       ) : (
         <span className="shrink-0 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">Paid</span>
       )}
@@ -211,46 +232,34 @@ function OutstandingRow({ s, onClick }: { s: DashboardStats; onClick?: () => voi
     <Link to="/orders?payment=due" onClick={onClick} className="flex items-center gap-3 rounded-2xl bg-amber-50 p-3.5 active:bg-amber-100">
       <span className="grid size-10 shrink-0 place-items-center rounded-full bg-white text-amber-600"><Icon className="h-5 w-5">{I.wallet}</Icon></span>
       <span className="min-w-0 flex-1">
-        <span className="block font-semibold tabular-nums text-slate-900">{formatPeso(s.outstanding_cents)} to collect</span>
-        <span className="block text-sm text-slate-600">From {plural(s.unpaid_orders, 'unpaid or partial order')}</span>
+        <span className="block font-semibold tabular-nums text-slate-900">Balance Due {formatPeso(s.outstanding_cents)}</span>
+        <span className="block text-sm text-slate-600">On {plural(s.unpaid_orders, 'order')} not fully paid</span>
       </span>
       <Icon className="h-5 w-5 text-amber-500">{I.chevron}</Icon>
     </Link>
   )
 }
 
-/**
- * The counter's to-do list, shown right on the page: orders waiting for their customer
- * (overdue first) and money still to collect.
- */
-function NeedsAttention({ s, ready }: { s: DashboardStats; ready: OrderRow[] }) {
+/** The counter's to-do list: orders waiting for their customer, earliest pickup (so overdue) first. */
+function ReadyForPickup({ s, ready }: { s: DashboardStats; ready: OrderRow[] }) {
   const shown = ready.slice(0, 4)
   return (
-    <section className={`${card} px-3 pb-3 pt-2 sm:px-4`}>
-      <div className="px-1">
-        <CardHeader
-          title="Ready for Pickup"
-          action={
-            <span className="-mr-2 flex items-center">
-              <ScanQrButton label="Scan" className="inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2 text-sm font-semibold text-blue-600 active:bg-blue-50" />
-              {s.ready > 0 && <Link to="/orders?status=ready" className="inline-flex min-h-11 items-center rounded-lg px-2 text-sm font-semibold text-blue-600 active:bg-blue-50">View all {s.ready}</Link>}
-            </span>
-          }
-        />
+    <section className="min-w-0">
+      <SectionHeader title="Ready for pickup" count={s.ready} action={s.ready > shown.length && <ViewAll to="/orders?status=ready" />} />
+      <div className={`${card} mt-1 overflow-hidden`}>
+        {shown.length === 0 ? (
+          <EmptyState icon={I.bag} title="Nothing waiting for pickup" text="Orders appear here as soon as they're marked Ready." />
+        ) : (
+          <ul className="divide-y divide-slate-100">
+            {shown.map((o) => <li key={o.id}><ReadyRow o={o} /></li>)}
+          </ul>
+        )}
       </div>
-      {shown.length === 0 ? (
-        <EmptyState icon={I.bag} title="Nothing waiting for pickup" text="Orders appear here as soon as they're marked Ready." />
-      ) : (
-        <ul className="mt-1 divide-y divide-slate-100 overflow-hidden rounded-2xl border border-slate-200/70">
-          {shown.map((o) => <li key={o.id}><ReadyRow o={o} /></li>)}
-        </ul>
-      )}
-      {s.outstanding_cents > 0 && <div className="mt-3"><OutstandingRow s={s} /></div>}
     </section>
   )
 }
 
-/** Bell with a dot when orders await pickup or payment; opens a sheet listing them. */
+/** Bell with a count when orders await pickup or payment; opens a sheet listing them. */
 function Notifications({ s, ready }: { s: DashboardStats; ready: OrderRow[] }) {
   const [open, setOpen] = useState(false)
   const count = s.ready + (s.outstanding_cents > 0 ? 1 : 0)
@@ -268,7 +277,7 @@ function Notifications({ s, ready }: { s: DashboardStats; ready: OrderRow[] }) {
       {open && (
         <Sheet label="Notifications" onClose={close}>
           {count === 0 ? (
-            <EmptyState icon={I.bell} title="You're all caught up" text="Orders ready for pickup and unpaid balances will show up here." />
+            <EmptyState icon={I.bell} title="You're all caught up" text="Orders ready for pickup and balances due will show up here." />
           ) : (
             <div className="space-y-4">
               {s.outstanding_cents > 0 && <OutstandingRow s={s} onClick={close} />}
@@ -294,43 +303,45 @@ function Notifications({ s, ready }: { s: DashboardStats; ready: OrderRow[] }) {
 }
 
 /**
- * Orders in the shop as a left-to-right workflow: one proportional bar (2px gaps between stages, shade
- * darkening with progress) and a tappable column per stage. Reads as "where the work is", which a donut
- * can't show.
+ * Orders in the shop as a left-to-right workflow: one proportional bar (shade darkening with progress)
+ * over a tappable tile per stage, so "where the work is" reads at a glance.
  */
 function Pipeline({ s }: { s: DashboardStats }) {
   const active = FLOW.reduce((n, f) => n + s[f.status], 0)
   return (
-    <section className={`${card} px-4 pb-3 pt-2`}>
-      <CardHeader
+    <section className="min-w-0">
+      <SectionHeader
         title="In the shop"
         action={<span className="text-sm tabular-nums text-slate-500"><b className="font-bold text-slate-900">{active}</b> active</span>}
       />
-      <div className="mt-1 flex h-2.5 gap-0.5 overflow-hidden rounded-full bg-slate-100" aria-hidden>
-        {active > 0 && FLOW.map((f) => s[f.status] > 0 && <span key={f.status} className={f.dot} style={{ width: `${(s[f.status] / active) * 100}%` }} />)}
+      <div className={`${card} mt-1 p-3`}>
+        <div className="flex h-2 gap-0.5 overflow-hidden rounded-full bg-slate-100" aria-hidden>
+          {active > 0 && FLOW.map((f) => s[f.status] > 0 && <span key={f.status} className={f.dot} style={{ width: `${(s[f.status] / active) * 100}%` }} />)}
+        </div>
+        <ol className="mt-3 grid grid-cols-4 gap-2">
+          {FLOW.map((f) => {
+            const n = s[f.status]
+            const ready = f.status === 'ready'
+            return (
+              <li key={f.status} className="min-w-0">
+                <Link
+                  to={`/orders?status=${f.status}`}
+                  aria-label={`${STATUS_LABEL[f.status]}: ${plural(n, 'order')}`}
+                  className={`flex min-h-18 flex-col items-center justify-center rounded-2xl px-1 py-2 transition active:scale-[0.97] ${
+                    ready && n ? 'bg-blue-600 text-white active:bg-blue-700' : 'bg-slate-50 active:bg-slate-100'
+                  }`}
+                >
+                  <span className={`text-2xl font-bold tabular-nums ${ready && n ? 'text-white' : n ? 'text-slate-900' : 'text-slate-300'}`}>{n}</span>
+                  <span className={`mt-0.5 flex max-w-full items-center gap-1 text-[11px] font-semibold ${ready && n ? 'text-blue-50' : 'text-slate-600'}`}>
+                    <span className={`size-2 shrink-0 rounded-full ${f.dot} ${ready && n ? 'ring-1 ring-white' : ''}`} aria-hidden />
+                    <span className="truncate">{STATUS_LABEL[f.status]}</span>
+                  </span>
+                </Link>
+              </li>
+            )
+          })}
+        </ol>
       </div>
-      <ol className="-mx-1 mt-2 grid grid-cols-4">
-        {FLOW.map((f, i) => {
-          const n = s[f.status]
-          const ready = f.status === 'ready'
-          return (
-            <li key={f.status} className="relative min-w-0">
-              <Link
-                to={`/orders?status=${f.status}`}
-                aria-label={`${STATUS_LABEL[f.status]}: ${plural(n, 'order')}`}
-                className={`flex min-h-18 flex-col items-center justify-center rounded-xl px-1 py-2 transition active:bg-slate-50 ${ready && n ? 'bg-blue-50' : ''}`}
-              >
-                <span className={`text-2xl font-bold tabular-nums ${n ? (ready ? 'text-blue-700' : 'text-slate-900') : 'text-slate-300'}`}>{n}</span>
-                <span className="mt-0.5 flex max-w-full items-center gap-1 text-[11px] font-medium text-slate-600">
-                  <span className={`size-2 shrink-0 rounded-full ${f.dot}`} aria-hidden />
-                  <span className="truncate">{STATUS_LABEL[f.status]}</span>
-                </span>
-              </Link>
-              {i < FLOW.length - 1 && <Icon className="pointer-events-none absolute -right-1.5 top-1/2 h-3 w-3 -translate-y-1/2 text-slate-300">{I.chevron}</Icon>}
-            </li>
-          )
-        })}
-      </ol>
     </section>
   )
 }
@@ -338,19 +349,19 @@ function Pipeline({ s }: { s: DashboardStats }) {
 /** Latest orders, drawn with the same card as the Orders page so status and payment read the same everywhere. */
 function RecentOrders({ rows }: { rows: OrderListRow[] }) {
   return (
-    <section className={`${card} px-3 pb-3 pt-2 sm:px-4`}>
-      <div className="px-1">
-        <CardHeader title="Recent Orders" action={rows.length > 0 && <ViewAll to="/orders" />} />
-      </div>
+    <section className="min-w-0">
+      <SectionHeader title="Recent orders" action={rows.length > 0 && <ViewAll to="/orders" />} />
       {rows.length === 0 ? (
-        <EmptyState
-          icon={I.orders}
-          title="No orders yet"
-          text="New laundry orders will show up here."
-          action={<Link to="/orders/new" className="inline-flex min-h-11 items-center gap-1.5 rounded-xl bg-blue-600 px-5 text-sm font-semibold text-white active:bg-blue-700"><Icon>{I.plus}</Icon>New Order</Link>}
-        />
+        <div className={`${card} mt-1`}>
+          <EmptyState
+            icon={I.orders}
+            title="No orders yet"
+            text="New laundry orders will show up here."
+            action={<Link to="/orders/new" className="inline-flex min-h-11 items-center gap-1.5 rounded-xl bg-blue-600 px-5 text-sm font-semibold text-white active:bg-blue-700"><Icon>{I.plus}</Icon>New Order</Link>}
+          />
+        </div>
       ) : (
-        <ul className="mt-1 grid gap-2.5 md:grid-cols-2">
+        <ul className="mt-1 grid gap-2.5">
           {rows.map((o) => <li key={o.id} className="min-w-0"><OrderCard o={o} /></li>)}
         </ul>
       )}
@@ -406,8 +417,8 @@ function SalesOverview({ daily }: { daily: Map<string, DailySales> }) {
   return (
     <section className={`${card} p-4 sm:p-5`}>
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-        <h2 className="text-lg font-bold text-slate-900">Sales Overview</h2>
-        <div role="tablist" aria-label="Sales period" className="flex rounded-xl bg-blue-50/70 p-1">
+        <h2 className="text-base font-bold text-slate-900">Order value</h2>
+        <div role="tablist" aria-label="Order value period" className="flex rounded-xl bg-blue-50/70 p-1">
           {RANGES.map((r) => (
             <button
               key={r.id}
@@ -428,7 +439,7 @@ function SalesOverview({ daily }: { daily: Map<string, DailySales> }) {
         {/* Readout: shows the period total, or the day being inspected */}
         <div aria-live="polite" className={`rounded-2xl border p-4 transition-colors ${picked ? 'border-blue-200 bg-blue-50/50' : 'border-slate-200/70'}`}>
           <div className="flex items-center gap-2 text-sm text-slate-600">
-            <span className="truncate">{picked ? longDate(picked.date) : 'Total Sales'}</span>
+            <span className="truncate">{picked ? longDate(picked.date) : 'Total order value'}</span>
             {picked?.date === todayKey && <span className="rounded-full bg-blue-600 px-2 py-0.5 text-[10px] font-semibold text-white">Today</span>}
           </div>
           <div className="mt-1 truncate text-[clamp(1.375rem,6.5vw,1.875rem)] font-bold leading-tight tracking-tight tabular-nums text-slate-900">
@@ -454,7 +465,7 @@ function SalesOverview({ daily }: { daily: Map<string, DailySales> }) {
             <div
               ref={plotRef}
               role="group"
-              aria-label="Daily sales. Use arrow keys to move between days."
+              aria-label="Daily order value. Use arrow keys to move between days."
               onKeyDown={onKeyDown}
               onPointerDown={(e) => {
                 if (e.pointerType === 'mouse' && e.button !== 0) return
@@ -554,7 +565,7 @@ function SalesOverview({ daily }: { daily: Map<string, DailySales> }) {
             <Icon className="h-3.5 w-3.5">{I.x}</Icon>Show period total
           </button>
         ) : total === 0 ? (
-          <span className="text-slate-400">No sales recorded in this period yet</span>
+          <span className="text-slate-400">No orders recorded in this period yet</span>
         ) : (
           <span className="text-slate-400">Tap or slide across the bars to see each day</span>
         )}
@@ -564,15 +575,13 @@ function SalesOverview({ daily }: { daily: Map<string, DailySales> }) {
 }
 
 function Skeleton() {
-  const block = 'animate-pulse bg-blue-100/40'
+  const block = 'animate-pulse bg-blue-100/50'
   return (
-    <div className="space-y-4" aria-busy="true" aria-label="Loading dashboard">
-      <div className="grid grid-cols-2 gap-2.5 min-[420px]:grid-cols-4">
-        {[0, 1, 2, 3].map((i) => <div key={i} className={`${block} h-36 rounded-2xl`} />)}
-      </div>
-      <div className={`${block} h-56 rounded-3xl`} />
-      <div className={`${block} h-72 rounded-3xl`} />
-      <div className={`${block} h-48 rounded-3xl`} />
+    <div className="space-y-5" aria-busy="true" aria-label="Loading dashboard">
+      <div className={`${block} h-44 rounded-3xl`} />
+      <div className={`${block} h-14 rounded-2xl`} />
+      <div className={`${block} h-36 rounded-2xl`} />
+      <div className={`${block} h-64 rounded-2xl`} />
     </div>
   )
 }
@@ -615,25 +624,20 @@ export default function Dashboard() {
     : 'No orders in the shop'
 
   return (
-    <div className="mx-auto max-w-5xl space-y-4 pb-4">
+    <div className="mx-auto max-w-5xl space-y-5 pb-6">
       <AppHeader actions={data && <Notifications s={data.stats} ready={data.ready} />} />
 
       {/* One line of greeting, one line of what matters right now */}
-      <div className="min-w-0">
-        <h1 className="truncate text-2xl font-bold tracking-tight text-slate-900">{greeting()} {firstName}</h1>
-        <p className="mt-0.5 truncate text-sm text-slate-500">
-          {today}{summary && <> · <span className={`font-semibold ${s && s.ready > 0 ? 'text-blue-700' : 'text-slate-700'}`}>{summary}</span></>}
-        </p>
+      <div className="min-w-0 px-1">
+        <p className="truncate text-sm text-slate-500">{today}</p>
+        <h1 className="mt-0.5 truncate text-2xl font-bold tracking-tight text-slate-900">{greeting()} {firstName}</h1>
+        {summary && (
+          <p className={`mt-1 truncate text-sm font-semibold ${s && s.ready > 0 ? 'text-blue-700' : 'text-slate-600'}`}>{summary}</p>
+        )}
       </div>
 
-      {/* Store shift: open/closed and what the drawer should hold */}
+      {/* Store shift: open/closed and what the drawer should hold. Closed blocks payments, so it sits up top. */}
       <StoreStatusBar />
-
-      {/* Pickup starts here: scan the claim stub to open the order. */}
-      <ScanQrButton
-        label="Scan QR · Pickup"
-        className="flex min-h-14 w-full items-center justify-center gap-2.5 rounded-2xl bg-blue-600 px-5 text-base font-semibold text-white shadow-sm shadow-blue-600/30 transition active:scale-[0.99] active:bg-blue-700"
-      />
 
       {error && !data ? (
         <div className={`${card} p-6 text-center`}>
@@ -647,13 +651,20 @@ export default function Dashboard() {
         <Skeleton />
       ) : (
         <>
-          <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
-            <TodayCard s={s} financials={financials} reportsTo={can('reports.view') ? '/reports' : `/orders?date=${ymd(new Date())}`} />
+          <div className="grid gap-5 lg:grid-cols-2 lg:items-start">
+            <div className="min-w-0 space-y-3">
+              <TodayHero s={s} financials={financials} reportsTo={can('reports.view') ? '/reports' : `/orders?date=${ymd(new Date())}`} />
+              {/* Pickup starts here: scan the claim stub to open the order. New order lives in the tab bar. */}
+              <ScanQrButton
+                label="Scan QR for pickup"
+                className="flex min-h-14 w-full items-center justify-center gap-2.5 rounded-2xl border border-blue-200 bg-white px-5 text-base font-semibold text-blue-700 shadow-[0_1px_3px_rgba(15,23,42,0.05)] transition active:scale-[0.99] active:bg-blue-50"
+              />
+            </div>
             <Pipeline s={s} />
           </div>
 
-          <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
-            <NeedsAttention s={s} ready={data.ready} />
+          <div className="grid gap-5 lg:grid-cols-2 lg:items-start">
+            <ReadyForPickup s={s} ready={data.ready} />
             <RecentOrders rows={data.recent} />
           </div>
 

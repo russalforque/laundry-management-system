@@ -7,6 +7,7 @@ import { PaymentBadge, StatusBadge } from '../components/Badges'
 import { Segmented, Toggle } from '../components/Controls'
 import { I, Icon } from '../components/Icons'
 import { BackHeader, card, Field, field, primary } from '../components/Manage'
+import { NumberInput } from '../components/NumberInput'
 import { Sheet } from '../components/Sheet'
 import ThermalReceipt from '../components/ThermalReceipt'
 import { FloatingToast, Toast, useAutoDismiss, type Msg } from '../components/Toast'
@@ -117,7 +118,7 @@ export default function Settings() {
         </Panel>
         <Panel title="Receipt header" text="How these details print at the top of receipts.">
           <div className="rounded-xl bg-slate-100 p-3">
-            <div className="mx-auto max-w-xs bg-white px-4 py-5 text-center font-mono text-[13px] leading-relaxed text-slate-800 shadow-sm">
+            <div className="mx-auto max-w-xs bg-white px-4 py-5 text-center text-[13px] leading-relaxed text-slate-800 shadow-sm">
               <p className="wrap-break-word font-bold uppercase">{f.business_name.trim() || 'Business name'}</p>
               {f.business_address.trim() && <p className="wrap-break-word">{f.business_address.trim()}</p>}
               {f.business_contact.trim() && <p>{f.business_contact.trim()}</p>}
@@ -144,12 +145,12 @@ export default function Settings() {
       >
         <Group title="Orders">
           <Row icon={I.calendar} title="Default pickup" text="Days after receiving. Leave blank for no default.">
-            <UnitInput label="Default pickup days" unit="days" inputMode="numeric" value={f.default_pickup_days} onChange={(v) => set('default_pickup_days', v)} />
+            <UnitInput label="Default pickup days" unit="days" decimals={0} maxInt={2} value={f.default_pickup_days} onChange={(v) => set('default_pickup_days', v)} />
           </Row>
         </Group>
         <Group title="Pricing">
           <Row icon={I.layers} title="Max weight per load" text="Loads are counted from weight (8 kg: 8.1 kg = 2 loads). Blank to enter loads by hand. Items can override it.">
-            <UnitInput label="Max weight per load in kg" unit="kg" inputMode="decimal" value={f.load_max_kg} onChange={(v) => set('load_max_kg', v)} />
+            <UnitInput label="Max weight per load in kg" unit="kg" decimals={2} maxInt={3} value={f.load_max_kg} onChange={(v) => set('load_max_kg', v)} />
           </Row>
           <Row icon={I.receipt} title="Prices, packages & add-ons" text="Edit services, packages and what they include" onClick={() => { if (okToLeave(unsaved)) navigate('/services') }} />
         </Group>
@@ -206,7 +207,7 @@ function Hub({ open }: { open: (v: View) => void }) {
   return (
     <div className="mx-auto max-w-2xl space-y-6 pb-2">
       <header>
-        <h1 className="text-3xl font-bold tracking-tight text-slate-900">Settings</h1>
+        <h1 className="text-2xl font-bold tracking-tight text-slate-900">Settings</h1>
         <p className="mt-1 text-slate-500">Manage your account and system settings.</p>
       </header>
 
@@ -341,17 +342,18 @@ function Row({ icon, title, text, to, onClick, danger, children }: {
 }
 
 /** Short number field with its unit inside ("3 days", "8 kg"). */
-function UnitInput({ label, unit, inputMode, value, onChange }: { label: string; unit: string; inputMode: 'numeric' | 'decimal'; value: string; onChange: (v: string) => void }) {
+function UnitInput({ label, unit, decimals, maxInt, value, onChange }: { label: string; unit: string; decimals: number; maxInt: number; value: string; onChange: (v: string) => void }) {
   return (
     <span className="relative block w-28 shrink-0">
-      <input
+      <NumberInput
         className="min-h-12 w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-4 pr-12 text-right text-base tabular-nums outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-        inputMode={inputMode}
+        decimals={decimals}
+        maxInt={maxInt}
         enterKeyHint="done"
         aria-label={label}
         placeholder="—"
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={onChange}
       />
       <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">{unit}</span>
     </span>
@@ -1083,7 +1085,7 @@ function HexInput({ label, value, onChange }: { label: string; value: string; on
   }
   return (
     <input
-      className="min-h-12 w-32 rounded-xl border border-slate-200 bg-white px-4 py-2.5 font-mono text-base uppercase outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+      className="min-h-12 w-32 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-base uppercase tabular-nums outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
       aria-label={`${label}: hex code`}
       maxLength={7}
       spellCheck={false}

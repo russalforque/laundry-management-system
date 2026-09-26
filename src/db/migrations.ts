@@ -304,4 +304,26 @@ export const migrations: string[] = [
   ALTER TABLE orders ADD COLUMN refunded_cents INTEGER NOT NULL DEFAULT 0 CHECK (refunded_cents >= 0 AND refunded_cents <= paid_cents);
   ALTER TABLE shifts ADD COLUMN cash_out_cents INTEGER;
   `,
+  // Optional name/phone for a walk-in order, kept on the order itself (walk-ins were filed under the shared WALK-IN
+  // customer). Walk-in has since been removed and new orders never set these; kept so older walk-in orders show them.
+  `
+  ALTER TABLE orders ADD COLUMN guest_name TEXT NOT NULL DEFAULT '';
+  ALTER TABLE orders ADD COLUMN guest_contact TEXT NOT NULL DEFAULT '';
+  `,
+  // Preset machine timers. Each machine has its own cycle length; starting a machine snapshots it on the assignment
+  // with the expected end time, so the countdown is always expected_end_at - now (accurate across navigation,
+  // backgrounding and restarts) and editing a machine later never changes a running cycle. A machine is Done while its
+  // assignment is still open past expected_end_at; staff free it with Mark as Unloaded. Loads already running get a
+  // timer from their start time; older finished assignments keep NULLs.
+  `
+  ALTER TABLE machines ADD COLUMN cycle_minutes INTEGER NOT NULL DEFAULT 40 CHECK (cycle_minutes BETWEEN 1 AND 600);
+  UPDATE machines SET cycle_minutes = 38 WHERE type = 'washer';
+  ALTER TABLE machine_assignments ADD COLUMN duration_minutes INTEGER CHECK (duration_minutes IS NULL OR duration_minutes > 0);
+  ALTER TABLE machine_assignments ADD COLUMN expected_end_at TEXT;
+  UPDATE machine_assignments SET
+    duration_minutes = (SELECT m.cycle_minutes FROM machines m WHERE m.id = machine_assignments.machine_id),
+    expected_end_at = strftime('%Y-%m-%dT%H:%M:%fZ', started_at,
+      '+' || (SELECT m.cycle_minutes FROM machines m WHERE m.id = machine_assignments.machine_id) || ' minutes')
+  WHERE ended_at IS NULL AND machine_id IS NOT NULL;
+  `,
 ]

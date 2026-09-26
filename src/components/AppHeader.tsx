@@ -32,13 +32,13 @@ export function AppHeader({ actions }: { actions?: ReactNode }) {
         {menu && (
           <>
             <div className="fixed inset-0 z-20" onClick={() => setMenu(false)} aria-hidden />
-            <div role="menu" className="absolute right-0 top-14 z-30 w-56 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
+            <div role="menu" className="absolute right-0 origin-top-right animate-menu-in top-14 z-30 w-56 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
               <div className="border-b border-slate-100 px-4 py-3">
                 <div className="truncate text-sm font-semibold text-slate-900">{user?.full_name}</div>
                 <div className="text-xs text-slate-500">{user && ROLE_LABEL[user.role]}</div>
               </div>
               <Link role="menuitem" to="/account" className="flex min-h-11 items-center gap-3 px-4 text-sm text-slate-700 active:bg-slate-50">
-                <Icon>{I.user}</Icon>My account
+                <Icon>{I.user}</Icon>My Account
               </Link>
               <button role="menuitem" onClick={switchUser} className="flex min-h-11 w-full items-center gap-3 px-4 text-sm text-slate-700 active:bg-slate-50">
                 <Icon>{I.users}</Icon>Switch user

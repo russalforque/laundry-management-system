@@ -17,7 +17,7 @@ export const NAV: NavItem[] = [
   { to: '/machines', label: 'Machines', icon: '🌀', perm: 'machines.operate' },
   { to: '/services', label: 'Services', icon: '🏷️', perm: 'services.manage' },
   { to: '/reports', label: 'Reports', icon: '📊', perm: 'reports.view' },
-  { to: '/payments', label: 'Payment History', icon: '💵', perm: 'payments.collect' },
+  { to: '/payments', label: 'Payments', icon: '💵', perm: 'payments.collect' },
   { to: '/store', label: 'Store Shift', icon: '🏪', perm: 'store.operate' },
   { to: '/printer', label: 'Printer', icon: '🖨️', perm: 'printer.use' },
   { to: '/users', label: 'Users', icon: '🔑', perm: 'users.manage' },

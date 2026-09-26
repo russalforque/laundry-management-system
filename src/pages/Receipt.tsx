@@ -92,7 +92,7 @@ export default function Receipt() {
                 <Icon className="mt-0.5 h-4 w-4 shrink-0">{printing.state === 'ok' ? I.check : I.info}</Icon>
                 <span className="min-w-0">
                   {printing.state === 'ok' ? 'Receipt printed.' : printing.msg}
-                  {printing.noPrinter && <Link to="/settings?view=printer" className="mt-1 block font-semibold underline">Set up printer</Link>}
+                  {printing.noPrinter && <Link to="/printer" className="mt-1 block font-semibold underline">Set up printer</Link>}
                 </span>
               </p>
             )}

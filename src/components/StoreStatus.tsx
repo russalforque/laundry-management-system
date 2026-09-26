@@ -42,7 +42,7 @@ export function StoreStatusBar() {
           {totals ? <>Expected in drawer <b className="tabular-nums">{formatPeso(totals.expected_cash_cents)}</b></> : `Opened by ${shift.user_name}`}
         </span>
       </span>
-      <span className="shrink-0 text-sm font-semibold text-emerald-700">Close</span>
+      <span className="shrink-0 text-sm font-semibold text-emerald-700">View</span>
       <Icon className="h-5 w-5 shrink-0 text-emerald-600">{I.chevron}</Icon>
     </Link>
   ) : (
@@ -50,9 +50,9 @@ export function StoreStatusBar() {
       <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-white text-amber-600 shadow-sm"><Icon className="h-5 w-5">{I.store}</Icon></span>
       <span className="min-w-0 flex-1">
         <span className="block text-sm font-semibold text-slate-900">Store is closed</span>
-        <span className="block truncate text-xs text-amber-800">Open it with the drawer cash so today's payments are counted.</span>
+        <span className="block truncate text-xs text-amber-800">Open the store to start taking payments.</span>
       </span>
-      <span className="shrink-0 text-sm font-semibold text-amber-800">Open</span>
+      <span className="shrink-0 text-sm font-semibold text-amber-800">Open Store</span>
       <Icon className="h-5 w-5 shrink-0 text-amber-600">{I.chevron}</Icon>
     </Link>
   )
@@ -70,7 +70,7 @@ export function StoreClosedNotice({ action = 'take payments' }: { action?: strin
       <Icon className="mt-0.5 h-4 w-4 shrink-0 text-amber-600">{I.info}</Icon>
       <span>
         The store is closed. Open the store to {action}, so the money is counted in the drawer.{' '}
-        <Link to="/store" className="font-semibold underline">Open store</Link>
+        <Link to="/store" className="font-semibold underline">Open Store</Link>
       </span>
     </p>
   )

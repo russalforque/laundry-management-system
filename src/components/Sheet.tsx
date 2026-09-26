@@ -66,7 +66,7 @@ export function Sheet({ label, onClose, children }: { label: string; onClose: ()
         onAnimationEnd={(e) => { if (closing && e.target === e.currentTarget) onClose() }}
         style={dragY ? { transform: `translateY(${dragY}px)` } : undefined}
         className={`flex max-h-[90vh] w-full max-w-md flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl outline-none md:rounded-3xl ${
-          closing ? 'animate-sheet-down md:animate-fade-out' : 'animate-sheet-up md:animate-fade-in'
+          closing ? 'animate-sheet-down md:animate-dialog-out' : 'animate-sheet-up md:animate-dialog-in'
         } ${dragging ? '' : 'transition-transform duration-200'} motion-reduce:animate-none`}
       >
         <div

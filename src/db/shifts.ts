@@ -1,6 +1,7 @@
 import { requirePermission } from '../lib/permissions'
 import type { OrderStatus, PaymentMethod } from '../types'
 import { query, queryOne, run, transaction, type Tx } from './client'
+import { ORDER_CUSTOMER_NAME } from './customers'
 
 /**
  * The daily store shift: one shared device and one shared cash drawer, so at most ONE shift is open
@@ -195,14 +196,14 @@ export async function getShiftDetail(id: number) {
   const [totals, payments, orders, events, refunds] = await Promise.all([
     totalsIn({ query }, s),
     query<ShiftPayment>(
-      `SELECT p.id, p.order_id, o.order_number, c.full_name AS customer_name, p.amount_cents, p.tendered_cents, p.method, p.reference,
+      `SELECT p.id, p.order_id, o.order_number, ${ORDER_CUSTOMER_NAME} AS customer_name, p.amount_cents, p.tendered_cents, p.method, p.reference,
               p.paid_at, u.full_name AS user_name, (COALESCE(o.shift_id, -1) <> p.shift_id) AS collected_later
        FROM payments p JOIN orders o ON o.id = p.order_id JOIN customers c ON c.id = o.customer_id JOIN users u ON u.id = p.user_id
        WHERE p.shift_id = ? ORDER BY p.paid_at DESC, p.id DESC`,
       [id],
     ),
     query<ShiftOrder>(
-      `SELECT o.id, o.order_number, c.full_name AS customer_name, o.total_cents, o.paid_cents, o.status, o.received_at
+      `SELECT o.id, o.order_number, ${ORDER_CUSTOMER_NAME} AS customer_name, o.total_cents, o.paid_cents, o.status, o.received_at
        FROM orders o JOIN customers c ON c.id = o.customer_id WHERE o.shift_id = ? ORDER BY o.received_at DESC`,
       [id],
     ),
@@ -213,7 +214,7 @@ export async function getShiftDetail(id: number) {
       [id],
     ),
     query<ShiftRefund>(
-      `SELECT r.id, r.order_id, o.order_number, c.full_name AS customer_name, r.amount_cents, r.method, r.reason, r.refunded_at,
+      `SELECT r.id, r.order_id, o.order_number, ${ORDER_CUSTOMER_NAME} AS customer_name, r.amount_cents, r.method, r.reason, r.refunded_at,
               u.full_name AS user_name
        FROM refunds r JOIN orders o ON o.id = r.order_id JOIN customers c ON c.id = o.customer_id JOIN users u ON u.id = r.user_id
        WHERE r.shift_id = ? ORDER BY r.refunded_at DESC, r.id DESC`,

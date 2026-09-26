@@ -2,7 +2,8 @@ import { canChangeStatus, paymentStatus } from '../lib/orders'
 import { requirePermission } from '../lib/permissions'
 import type { OrderItemRow, OrderRow, OrderStatus, PaymentRow, PaymentStatus, RefundRow } from '../types'
 import { query, queryOne, transaction } from './client'
-import { hasOpenMachine, syncMachineWithStatus } from './machines'
+import { ORDER_CUSTOMER_CONTACT, ORDER_CUSTOMER_NAME } from './customers'
+import { hasOpenMachine, machinesChanged, syncMachineWithStatus } from './machines'
 import { OPEN_SHIFT_ID, recordShiftEvent } from './shifts'
 
 export interface OrderFilters {
@@ -36,7 +37,7 @@ const ITEMS_SUMMARY = `(SELECT GROUP_CONCAT(
 export function listOrders(f: OrderFilters = {}, limit = 300) {
   const { where, params } = orderWhere(f)
   return query<OrderListRow>(
-    `SELECT o.*, c.full_name AS customer_name, ${ITEMS_SUMMARY}, ${MACHINE_NOW} FROM orders o JOIN customers c ON c.id = o.customer_id
+    `SELECT o.*, ${ORDER_CUSTOMER_NAME} AS customer_name, ${ITEMS_SUMMARY}, ${MACHINE_NOW} FROM orders o JOIN customers c ON c.id = o.customer_id
      ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY o.received_at DESC LIMIT ?`,
     [...params, limit],
   )
@@ -58,8 +59,8 @@ function orderWhere(f: OrderFilters) {
   const params: unknown[] = []
   if (f.text?.trim()) {
     const like = `%${f.text.trim()}%`
-    where.push('(o.order_number LIKE ? OR c.full_name LIKE ? OR c.contact LIKE ?)')
-    params.push(like, like, like)
+    where.push('(o.order_number LIKE ? OR c.full_name LIKE ? OR c.contact LIKE ? OR o.guest_name LIKE ? OR o.guest_contact LIKE ?)')
+    params.push(like, like, like, like, like)
   }
   if (f.customerId) { where.push('o.customer_id = ?'); params.push(f.customerId) }
   if (f.status) { where.push('o.status = ?'); params.push(f.status) }
@@ -80,7 +81,7 @@ export async function getOrderDetail(id: number) {
   const order = await queryOne<OrderRow & {
     customer_contact: string; created_by: number; created_by_name: string | null; released_at: string | null; released_by_name: string | null
   }>(
-    `SELECT o.*, c.full_name AS customer_name, c.contact AS customer_contact, u.full_name AS created_by_name, r.full_name AS released_by_name
+    `SELECT o.*, ${ORDER_CUSTOMER_NAME} AS customer_name, ${ORDER_CUSTOMER_CONTACT} AS customer_contact, u.full_name AS created_by_name, r.full_name AS released_by_name
      FROM orders o JOIN customers c ON c.id = o.customer_id LEFT JOIN users u ON u.id = o.created_by LEFT JOIN users r ON r.id = o.released_by
      WHERE o.id = ?`,
     [id],
@@ -127,7 +128,7 @@ export async function getPaymentReceipt(orderId: number, paymentId: number) {
  */
 export async function setOrderStatus(id: number, to: OrderStatus, userId?: number) {
   const me = requirePermission('orders.manage')
-  return transaction(async (tx) => {
+  await transaction(async (tx) => {
     // A cancellation is a void and a release hands over the laundry: both are recorded against a signed-in employee.
     if ((to === 'cancelled' || to === 'released') && !userId) throw new Error(to === 'cancelled' ? 'Sign in to cancel orders.' : 'Sign in to release laundry.')
     const [row] = await tx.query<{ status: OrderStatus; balance_cents: number }>('SELECT status, total_cents - paid_cents AS balance_cents FROM orders WHERE id = ?', [id])
@@ -136,7 +137,7 @@ export async function setOrderStatus(id: number, to: OrderStatus, userId?: numbe
     if (row.status === 'cancelled') throw new Error('This order was cancelled and can no longer be changed.')
     if (!canChangeStatus(row.status, to) || to === 'washing' || to === 'drying') throw new Error('This order can no longer change to that status.')
     if (to === 'ready' && (await hasOpenMachine(tx, id))) throw new Error('Finish the machine cycle first.')
-    if (to === 'released' && row.balance_cents > 0) throw new Error('Collect the remaining balance before releasing the laundry.')
+    if (to === 'released' && row.balance_cents > 0) throw new Error('Collect the Balance Due before releasing the laundry.')
     if (to === 'released') {
       // Recorded against the signed-in employee, never the id passed in.
       await tx.run(
@@ -151,6 +152,7 @@ export async function setOrderStatus(id: number, to: OrderStatus, userId?: numbe
     }
     await syncMachineWithStatus(tx, id, to)
   })
+  machinesChanged() // a cancel may have ended a cycle: drop its timer alert
 }
 
 /** Scan / type-in lookup: the order with exactly this number (see parseOrderCode), or null. */

@@ -16,7 +16,7 @@ const PAY_CLS: Record<PaymentStatus, string> = {
   paid: 'bg-emerald-100 text-emerald-800',
 }
 
-const base = 'inline-block whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-semibold'
+const base = 'inline-block whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-semibold transition-colors'
 
 export const StatusBadge = ({ status }: { status: OrderStatus }) => (
   <span className={`${base} ${STATUS_CLS[status]}`}>{STATUS_LABEL[status]}</span>

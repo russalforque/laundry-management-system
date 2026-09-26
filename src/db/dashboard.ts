@@ -1,6 +1,7 @@
 import { sessionCan } from '../lib/permissions'
 import type { OrderRow } from '../types'
 import { query, queryOne } from './client'
+import { ORDER_CUSTOMER_NAME } from './customers'
 
 export interface DashboardStats {
   today_orders: number
@@ -51,7 +52,7 @@ export async function getDashboardStats(): Promise<DashboardStats> {
 /** Orders waiting to be claimed, earliest pickup first. */
 export function getReadyForPickup(limit = 6) {
   return query<OrderRow>(
-    `SELECT o.*, c.full_name AS customer_name
+    `SELECT o.*, ${ORDER_CUSTOMER_NAME} AS customer_name
      FROM orders o JOIN customers c ON c.id = o.customer_id
      WHERE o.status = 'ready'
      ORDER BY COALESCE(o.expected_pickup, date(o.received_at, 'localtime')) ASC, o.received_at ASC LIMIT ?`,

@@ -17,14 +17,14 @@ const hasOwnHeader = (path: string) => OWN_HEADER.includes(path) || /^\/(custome
  * `match` decides which pages light a tab up (e.g. an order's page keeps Orders active, New Order does not).
  */
 const TABS: { to: string; label: string; icon: ReactNode; match: (path: string) => boolean }[] = [
-  { to: '/', label: 'Home', icon: I.home, match: (p) => p === '/' },
+  { to: '/', label: 'Dashboard', icon: I.home, match: (p) => p === '/' },
   { to: '/orders', label: 'Orders', icon: I.orders, match: (p) => p === '/orders' || /^\/orders\/\d+/.test(p) },
   { to: '/machines', label: 'Machines', icon: I.washer, match: (p) => p.startsWith('/machines') },
 ]
 /** Access comes from NAV (`to` of the guarded route) or `perm`, so the sheet never shows a page the user can't open. */
 const MORE: { to: string; label: string; icon: ReactNode; group: 'Daily work' | 'Business' | 'Account'; anchor?: string; perm?: Permission }[] = [
   { to: '/customers', label: 'Customers', icon: I.users, group: 'Daily work' },
-  { to: '/store', label: 'Store shift', icon: I.store, group: 'Daily work' },
+  { to: '/store', label: 'Store Shift', icon: I.store, group: 'Daily work' },
   { to: '/payments', label: 'Payments', icon: I.wallet, group: 'Daily work' },
   { to: '/printer', label: 'Printer', icon: I.printer, group: 'Daily work' },
   { to: '/services', label: 'Services', icon: I.shirt, group: 'Business' },
@@ -32,7 +32,7 @@ const MORE: { to: string; label: string; icon: ReactNode; group: 'Daily work' | 
   { to: '/users', label: 'Users', icon: I.shield, group: 'Business' },
   { to: '/settings', label: 'Settings', icon: I.gear, group: 'Business' },
   { to: '/settings', label: 'Backup', icon: I.cloud, group: 'Business', anchor: 'backup', perm: 'backup.manage' },
-  { to: '/account', label: 'My profile', icon: I.user, group: 'Account' },
+  { to: '/account', label: 'My Account', icon: I.user, group: 'Account' },
 ]
 const GROUPS = ['Daily work', 'Business', 'Account'] as const
 
@@ -56,7 +56,7 @@ function TabInner({ icon, label, active }: { icon: ReactNode; label: string; act
       <span className={`grid h-8 w-14 place-items-center rounded-full transition-colors duration-200 ${active ? 'bg-blue-100 text-blue-700' : 'text-slate-500'}`}>
         <Icon className={`h-6 w-6 ${active ? 'fill-blue-200/60' : ''}`}>{icon}</Icon>
       </span>
-      <span className={`text-[11px] leading-none ${active ? 'font-bold text-blue-700' : 'font-medium text-slate-500'}`}>{label}</span>
+      <span className={`text-[11px] leading-none transition-colors ${active ? 'font-bold text-blue-700' : 'font-medium text-slate-500'}`}>{label}</span>
     </>
   )
 }
@@ -164,7 +164,7 @@ export default function Layout() {
                       >
                         {on && <span aria-hidden className="absolute inset-y-2 left-0 w-1 rounded-r-full bg-blue-600" />}
                         <Icon className={`h-5 w-5 shrink-0 ${on ? 'text-blue-600' : 'text-slate-400'}`}>{NAV_ICON[n.to] ?? I.more}</Icon>
-                        <span className="truncate">{n.to === '/payments' ? 'Payments' : n.label}</span>
+                        <span className="truncate">{n.label}</span>
                       </NavLink>
                     </li>
                   )
@@ -201,7 +201,7 @@ export default function Layout() {
         </div>
       )}
 
-      <main ref={mainRef} className="min-h-0 flex-1 overflow-y-auto p-4 md:p-6">
+      <main ref={mainRef} className={`min-h-0 flex-1 overflow-y-auto p-4 md:p-6 ${under(pathname, '/store') || /^\/orders\/\d+$/.test(pathname) ? 'bg-blue-50' : ''}`}>
         <Outlet />
       </main>
 

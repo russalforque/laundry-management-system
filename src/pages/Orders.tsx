@@ -15,7 +15,7 @@ const STATUSES: OrderStatus[] = [...STATUS_FLOW, 'cancelled']
 const LIMIT = 300
 
 type Pay = PaymentStatus | 'due' | ''
-const PAY_LABEL: Record<Exclude<Pay, ''>, string> = { due: 'Unpaid or partial', unpaid: 'Unpaid', partial: 'Partial', paid: 'Paid' }
+const PAY_LABEL: Record<Exclude<Pay, ''>, string> = { due: 'Balance due', unpaid: 'Unpaid', partial: 'Partial', paid: 'Paid' }
 
 /** "Today", "Yesterday" or "Wed, Sep 24" for the day headers. */
 function dayLabel(iso: string) {
@@ -92,7 +92,7 @@ export default function Orders() {
 
       <div className="flex items-end justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="text-3xl font-bold tracking-tight text-slate-900">Orders</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900">Orders</h1>
           <p className="mt-1 text-sm text-slate-500">Track every laundry order</p>
         </div>
       </div>
@@ -139,7 +139,7 @@ export default function Orders() {
         </div>
 
         {showFilters && (
-          <div className="grid grid-cols-2 gap-2 rounded-2xl border border-slate-200/80 bg-white p-3">
+          <div className="grid animate-reveal grid-cols-2 gap-2 rounded-2xl border border-slate-200/80 bg-white p-3">
             <label className="text-xs font-medium text-slate-500">
               Payment
               <span className="mt-1 block">

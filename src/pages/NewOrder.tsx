@@ -5,16 +5,19 @@ import { Chip } from '../components/Chip'
 import { CashChange } from '../components/PaymentForm'
 import { CashDrawerControl, type DrawerMsg } from '../components/CashDrawer'
 import { DateInput, Segmented, Toggle } from '../components/Controls'
-import { I, Icon, serviceIcon } from '../components/Icons'
+import { I, Icon } from '../components/Icons'
+import { NumberInput } from '../components/NumberInput'
+import { ServiceArt } from '../components/ServiceArt'
 import { Sheet } from '../components/Sheet'
 import { StoreClosedNotice, useStoreShift } from '../components/StoreStatus'
 import { fieldCls as field } from '../components/ui'
-import { createCustomer, getCustomer, getWalkInCustomer, searchCustomers, WALK_IN_CODE } from '../db/customers'
+import { createCustomer, getCustomer, searchCustomers, WALK_IN_CODE } from '../db/customers'
 import { createOrder } from '../db/orders'
 import { listInclusions, listServices, priceUnit } from '../db/services'
 import { getSettings } from '../db/settings'
 import { cashTender, centsToInput, formatPeso, parsePesoToCents } from '../lib/money'
-import { normalizeQuantity, paymentStatus } from '../lib/orders'
+import { parseNumber, stripGrouping } from '../lib/number'
+import { MAX_QUANTITY, normalizeQuantity, paymentStatus } from '../lib/orders'
 import { includesText, kindOf, loadsFor, maxKgOf, parseMaxKg, priceCart, qtyText, TYPE_UNIT, type CartItem, type PricedLine } from '../lib/pricing'
 import { autoOpenCashDrawer, canBluetoothPrint, NoPrinterError, printOrderReceipt } from '../lib/printer'
 import type { Customer, Inclusion, PaymentMethod, Service } from '../types'
@@ -63,7 +66,7 @@ const primary = 'flex w-full items-center justify-center gap-2 rounded-xl bg-blu
 const iconBtn = 'grid size-11 shrink-0 place-items-center rounded-full text-slate-800 active:bg-slate-200 disabled:text-slate-300'
 
 /** A service counts as picked once it has a non-zero quantity (invalid text still counts, so it gets flagged). */
-const isPicked = (qty: string | undefined) => !!qty?.trim() && parseFloat(qty) !== 0
+const isPicked = (qty: string | undefined) => !!qty?.trim() && parseNumber(qty) !== 0
 
 const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 const daysFromNow = (n: number) => { const d = new Date(); d.setDate(d.getDate() + n); return ymd(d) }
@@ -72,16 +75,6 @@ function pickupLabel(date: string, time: string) {
   const d = new Date(`${date}T${time || '00:00'}`)
   const day = d.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })
   return time ? `${day}, ${d.toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit' })}` : day
-}
-
-/** Service photo: the uploaded image, or a soft blue tile with the service glyph when there is none. */
-function ServiceArt({ name, image, className, iconCls }: { name: string; image?: string | null; className: string; iconCls: string }) {
-  if (image) return <img src={image} alt="" aria-hidden className={`object-cover ${className}`} />
-  return (
-    <span aria-hidden className={`grid place-items-center bg-linear-to-br from-blue-50 to-blue-100/70 text-blue-500 ${className}`}>
-      <Icon className={iconCls}>{serviceIcon(name)}</Icon>
-    </span>
-  )
 }
 
 const PersonTile = () => (
@@ -176,7 +169,7 @@ const NextLabel = ({ children = 'Next' }: { children?: ReactNode }) => (
 
 /** − qty + control. Weight accepts decimals by typing; fixed-price services never show it. */
 function Stepper({ service, value, onChange, min = 0, ...props }: { service: Service; value: string; onChange: (v: string) => void; min?: number } & Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange' | 'min'>) {
-  const cur = parseFloat(value) || 0
+  const cur = parseNumber(value) ?? 0
   const step = (delta: number) => {
     const next = Math.max(0, Math.round((cur + delta) * 100) / 100)
     onChange(next ? String(next) : '')
@@ -187,13 +180,14 @@ function Stepper({ service, value, onChange, min = 0, ...props }: { service: Ser
       <button type="button" aria-label={`Less ${service.name}`} onClick={() => step(-1)} disabled={cur <= Math.max(min, 0)} className={btn}>
         <Icon className="h-4 w-4">{I.minus}</Icon>
       </button>
-      <input
+      <NumberInput
         {...props}
         className="w-11 bg-transparent text-center font-semibold tabular-nums text-slate-900 outline-none"
-        inputMode={service.pricing_method === 'per_kg' ? 'decimal' : 'numeric'}
+        decimals={service.pricing_method === 'per_kg' ? 2 : 0}
+        maxInt={String(MAX_QUANTITY).length}
         placeholder="0"
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={onChange}
       />
       <button type="button" aria-label={`More ${service.name}`} onClick={() => step(1)} className={btn}>
         <Icon className="h-4 w-4">{I.plus}</Icon>
@@ -203,11 +197,11 @@ function Stepper({ service, value, onChange, min = 0, ...props }: { service: Ser
 }
 
 /** Input with a fixed ₱ prefix so the unit is always visible. */
-function PesoInput(props: InputHTMLAttributes<HTMLInputElement>) {
+function PesoInput({ value, onChange, autoFocus }: { value: string; onChange: (v: string) => void; autoFocus?: boolean }) {
   return (
     <div className="relative mt-1">
       <span className="pointer-events-none absolute inset-y-0 left-4 flex items-center text-slate-500">₱</span>
-      <input {...props} inputMode="decimal" placeholder="0.00" className={`${field} pl-9`} />
+      <NumberInput autoFocus={autoFocus} value={value} onChange={onChange} placeholder="0.00" className={`${field} pl-9`} />
     </div>
   )
 }
@@ -234,7 +228,26 @@ const SumRow = ({ label, value, className = 'text-slate-600' }: { label: ReactNo
   </div>
 )
 
+/**
+ * "Start new order" remounts the form with a new key, so every field starts blank again. A page reload would
+ * do the same but also drops the sign-in (kept in memory only) and sends staff back to the login screen.
+ */
 export default function NewOrder() {
+  const navigate = useNavigate()
+  const [run, setRun] = useState(0)
+  return (
+    <NewOrderForm
+      key={run}
+      onRestart={() => {
+        navigate('/orders/new', { replace: true }) // drop ?customer= and ?step= from the last order
+        setRun((r) => r + 1)
+        document.querySelector('main')?.scrollTo({ top: 0 })
+      }}
+    />
+  )
+}
+
+function NewOrderForm({ onRestart }: { onRestart: () => void }) {
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
   const preset = Number(params.get('customer')) || 0
@@ -244,7 +257,6 @@ export default function NewOrder() {
   const [defaultMaxKg, setDefaultMaxKg] = useState<number | null>(null)
   const [weight, setWeightMap] = useState<Record<number, string>>({}) // per-load services: kg entered
   const [customer, setCustomer] = useState<Customer | null>(null)
-  const [walkIn, setWalkIn] = useState(false)
   const [search, setSearch] = useState('')
   const [matches, setMatches] = useState<Customer[] | null>(null)
   const [addingCustomer, setAddingCustomer] = useState(false)
@@ -275,7 +287,8 @@ export default function NewOrder() {
 
   useEffect(() => {
     // Opened from a customer's page: start with that customer selected.
-    if (preset) getCustomer(preset).then((c) => c && setCustomer(c))
+    // The legacy walk-in record can't take new orders, so it is never preselected.
+    if (preset) getCustomer(preset).then((c) => c && c.customer_code !== WALK_IN_CODE && setCustomer(c))
     listServices(true).then(setServices)
     listInclusions().then(setInclusions)
     getSettings().then((s) => {
@@ -290,11 +303,11 @@ export default function NewOrder() {
 
   // Derived money, all in centavos. Priced by the same routine createOrder uses, which re-validates on save.
   const picked = services.filter((s) => isPicked(qty[s.id]))
-  // Number(), not parseFloat(): "2abc" must be rejected, not read as 2.
-  const quantityOf = (s: Service) => normalizeQuantity(s.pricing_method, Number(qty[s.id]!.trim()))
+  // parseNumber, not parseFloat(): "2abc" must be rejected, not read as 2; "1,000" is 1000.
+  const quantityOf = (s: Service) => normalizeQuantity(s.pricing_method, parseNumber(qty[s.id]) ?? NaN)
   /** Weight for a per-load line: a number, null when blank, undefined when invalid. */
   const weightOf = (s: Service): number | null | undefined => {
-    const w = weight[s.id]?.trim()
+    const w = stripGrouping(weight[s.id] ?? '')
     if (s.pricing_type !== 'per_load' || !w) return null
     const n = Number(w)
     return /^\d+(\.\d{1,2})?$/.test(w) && n > 0 ? n : undefined
@@ -323,8 +336,7 @@ export default function NewOrder() {
   const paidCents = tender ? tender.applied : receivedCents
   const balance = Math.max(total - (paidCents ?? 0), 0)
   const expectedPickup = schedule === 'later' && pickupDate ? (pickupTime ? `${pickupDate} ${pickupTime}` : pickupDate) : null
-  const isWalkIn = customer?.customer_code === WALK_IN_CODE
-  const canSms = !!customer?.contact && !isWalkIn
+  const canSms = !!customer?.contact
 
   // Guard deep links / reloads: later steps need a customer, details needs a cart.
   let step: Step = (params.get('step') as Step | null) ?? (preset ? 'services' : 'customer')
@@ -343,8 +355,9 @@ export default function NewOrder() {
   /** Entering a weight counts the loads (e.g. 8 kg max: 8.1 kg = 2); staff can still change the loads after. */
   function setWeight(s: Service, v: string) {
     setWeightMap((m) => ({ ...m, [s.id]: v }))
-    const n = Number(v)
-    if (/^\d+(\.\d{1,2})?$/.test(v.trim()) && n > 0) setQty(s.id, String(loadsFor(n, maxKgOf(s, defaultMaxKg))))
+    const raw = stripGrouping(v)
+    const n = Number(raw)
+    if (/^\d+(\.\d{1,2})?$/.test(raw) && n > 0) setQty(s.id, String(loadsFor(n, maxKgOf(s, defaultMaxKg))))
   }
 
   function goTo(s: Step) {
@@ -360,7 +373,7 @@ export default function NewOrder() {
 
   function addOne(s: Service) {
     // Included add-ons start from what the package already covers, so a tap adds one extra (charged) piece.
-    const cur = lineOf(s.id)?.p?.quantity ?? (parseFloat(qty[s.id] ?? '') || 0)
+    const cur = lineOf(s.id)?.p?.quantity ?? (parseNumber(qty[s.id]) ?? 0)
     if (s.pricing_method === 'fixed') return setQty(s.id, '1')
     setQty(s.id, String(Math.round((cur + 1) * 100) / 100))
   }
@@ -384,16 +397,14 @@ export default function NewOrder() {
   }
 
   async function customerNext() {
-    if (walkIn) {
-      try { setCustomer(await getWalkInCustomer()) } catch (e) { return fail(e instanceof Error ? e.message : 'Could not start a walk-in order.') }
-    } else if (!customer) return fail('Select a customer, or choose Walk-in.')
+    if (!customer) return fail('Select a customer, or add a new one.')
     goTo('services')
   }
 
   function cartNext() {
     const items = orderItems()
     if (typeof items === 'string') return fail(items)
-    if (discountCents === null) return fail('Invalid discount.')
+    if (discountCents === null) return fail('Enter a valid discount amount, e.g. 50.')
     if (discountCents > subtotal) return fail('Discount cannot exceed the subtotal.')
     if (!customer) return fail('Select a customer first.')
     goTo('details')
@@ -402,9 +413,9 @@ export default function NewOrder() {
   function review() {
     if (schedule === 'later' && !pickupDate) return fail('Choose a pickup date, or switch to ASAP.')
     if (schedule === 'later' && pickupDate < daysFromNow(0)) return fail('Pickup date cannot be in the past.')
-    if (paidCents === null) return fail('Invalid amount paid.')
+    if (paidCents === null) return fail('Enter a valid amount, e.g. 500 or 500.50.')
     if (storeClosed && (paidCents ?? 0) > 0) return fail('The store is closed. Open the store to take payment, or choose Pay Later.')
-    if (paidCents > total) return fail('Amount paid cannot exceed the total.')
+    if (paidCents > total) return fail('Amount Paid cannot be more than the Total.')
     if (payOpt === 'now' && total > 0 && paidCents === 0) return fail('Enter the amount received, or choose Pay Later.')
     setErr(null)
     setReviewing(true)
@@ -474,15 +485,15 @@ export default function NewOrder() {
               </span>
             </span>
             <h1 className="mt-4 text-2xl font-bold tracking-tight text-slate-900" role="status">Order placed</h1>
-            <p className="mt-1 text-sm text-slate-500">{customer?.full_name}{isWalkIn ? '' : customer?.contact ? ` · ${customer.contact}` : ''}</p>
+            <p className="mt-1 text-sm text-slate-500">{customer?.full_name}{customer?.contact ? ` · ${customer.contact}` : ''}</p>
           </div>
 
           {/* The one number the cashier must hand over */}
           {tender && tender.change > 0 && (
             <div className="flex items-center justify-between gap-3 rounded-2xl bg-emerald-600 px-4 py-3 text-white shadow-lg shadow-emerald-600/20">
               <span>
-                <span className="block text-sm font-semibold">Give change</span>
-                <span className="block text-xs text-emerald-100">Received {formatPeso(receivedCents!)}</span>
+                <span className="block text-sm font-semibold">Change</span>
+                <span className="block text-xs text-emerald-100">Amount Received {formatPeso(receivedCents!)}</span>
               </span>
               <span className="text-3xl font-bold tabular-nums">{formatPeso(tender.change)}</span>
             </div>
@@ -496,8 +507,8 @@ export default function NewOrder() {
             </div>
             <dl className="space-y-2 px-4 py-3 text-sm">
               <SumRow label={`Total · ${itemCount}`} value={formatPeso(shownTotal)} className="text-base font-bold text-slate-900" />
-              <SumRow label={(paidCents ?? 0) > 0 ? `Paid · ${METHODS.find((m) => m.value === method)!.label}` : 'Paid'} value={formatPeso(paidCents ?? 0)} />
-              <SumRow label={<span className="flex items-center gap-2">Balance <PaymentBadge status={status} /></span>} value={formatPeso(balance)} className={balance > 0 ? 'font-semibold text-amber-700' : 'text-slate-600'} />
+              <SumRow label={(paidCents ?? 0) > 0 ? `Amount Paid · ${METHODS.find((m) => m.value === method)!.label}` : 'Amount Paid'} value={formatPeso(paidCents ?? 0)} />
+              <SumRow label={<span className="flex items-center gap-2">Balance Due <PaymentBadge status={status} /></span>} value={formatPeso(balance)} className={balance > 0 ? 'font-semibold text-amber-700' : 'text-slate-600'} />
               <SumRow label="Pickup" value={expectedPickup ? pickupLabel(pickupDate, pickupTime) : 'ASAP'} />
             </dl>
           </section>
@@ -513,7 +524,7 @@ export default function NewOrder() {
               <Icon className={`mt-px h-5 w-5 shrink-0 ${printing.state === 'busy' ? 'animate-pulse' : ''}`}>{printing.state === 'ok' ? I.check : printing.state === 'error' ? I.info : I.printer}</Icon>
               <span className="min-w-0 flex-1">
                 {printing.state === 'busy' ? 'Printing receipt…' : printing.state === 'ok' ? 'Receipt printed.' : printing.msg}
-                {printing.noPrinter && <Link to="/settings?view=printer" className="mt-1 block font-semibold underline">Set up printer</Link>}
+                {printing.noPrinter && <Link to="/printer" className="mt-1 block font-semibold underline">Set up printer</Link>}
               </span>
             </p>
           )}
@@ -535,9 +546,9 @@ export default function NewOrder() {
 
         {/* Next customer: the main job after a sale */}
         <div className="sticky bottom-0 z-10 -mx-4 mt-6 border-t border-slate-200/70 bg-white/95 px-4 pb-3 pt-3 shadow-[0_-4px_20px_rgba(15,23,42,0.06)] backdrop-blur md:bottom-4 md:mx-0 md:rounded-2xl md:border">
-          <a href="#/orders/new" onClick={() => location.reload()} className={primary}>
+          <button type="button" onClick={onRestart} className={primary}>
             <Icon className="h-5 w-5">{I.plus}</Icon>Start new order
-          </a>
+          </button>
           <Link to="/orders" replace className="mt-1 flex min-h-11 items-center justify-center text-sm font-semibold text-slate-600 active:text-slate-900">
             Go to all orders
           </Link>
@@ -556,12 +567,10 @@ export default function NewOrder() {
   // Shown on every step after the first, so the cashier always knows whose order this is.
   const customerRow = customer && (
     <div className={`${card} flex items-center gap-3 p-3`}>
-      {isWalkIn ? (
-        <span aria-hidden className="grid size-11 shrink-0 place-items-center rounded-xl bg-blue-50 text-blue-600"><Icon className="h-6 w-6">{I.store}</Icon></span>
-      ) : <PersonTile />}
+      <PersonTile />
       <span className="min-w-0 flex-1">
         <span className="block text-xs text-slate-500">Customer</span>
-        <span className="block truncate font-semibold text-slate-900">{customer.full_name}{!isWalkIn && customer.contact && <span className="font-normal text-slate-500"> · {customer.contact}</span>}</span>
+        <span className="block truncate font-semibold text-slate-900">{customer.full_name}{customer.contact && <span className="font-normal text-slate-500"> · {customer.contact}</span>}</span>
       </span>
       <button type="button" onClick={() => goTo('customer')} className="-mr-1 min-h-11 shrink-0 rounded-xl px-3 text-sm font-semibold text-blue-700 active:bg-blue-50">Change</button>
     </div>
@@ -584,96 +593,76 @@ export default function NewOrder() {
 
   // ── Step 1: customer ─────────────────────────────────────────────
   if (step === 'customer') {
+    // A search that looks like a phone number prefills the phone on "Add New Customer" instead of the name.
+    const searchIsPhone = /^[\d+()\-\s]+$/.test(search.trim()) && search.replace(/\D/g, '').length >= 3
     return (
       <>
         {page(
           <>
             {header('Who is this order for?')}
-            <Segmented
-              label="Customer type"
-              value={walkIn ? 'walkin' : 'select'}
-              onChange={(v) => {
-                setWalkIn(v === 'walkin')
-                if (v === 'select' && isWalkIn) setCustomer(null)
-              }}
-              options={[{ value: 'select', label: 'Select Customer' }, { value: 'walkin', label: 'Walk-in' }]}
-            />
+            <div className="relative">
+              <Icon className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400">{I.search}</Icon>
+              <input
+                className={`${field} pl-12`}
+                type="search"
+                enterKeyHint="search"
+                aria-label="Search customer by name or phone number"
+                placeholder="Search name or phone number…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </div>
 
-            {walkIn ? (
-              <div className={`${card} flex flex-col items-center px-6 py-10 text-center`}>
-                <span className="grid size-16 place-items-center rounded-full bg-blue-50 text-blue-600">
-                  <Icon className="h-8 w-8">{I.store}</Icon>
-                </span>
-                <p className="mt-3 font-semibold text-slate-900">Walk-in customer</p>
-                <p className="mt-1 text-sm text-slate-500">No customer details needed. The order is filed under “Walk-in Customer”.</p>
+            {matches === null ? (
+              <div className="space-y-2" aria-busy="true">
+                {[0, 1, 2].map((i) => <div key={i} className="h-17 animate-pulse rounded-2xl bg-slate-200/60" />)}
               </div>
+            ) : matches.length === 0 ? (
+              <p className="px-2 py-6 text-center text-sm text-slate-500">{search ? `No customer matches “${search}”.` : 'No customers yet.'}</p>
             ) : (
-              <>
-                <div className="relative">
-                  <Icon className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400">{I.search}</Icon>
-                  <input
-                    className={`${field} pl-12`}
-                    type="search"
-                    enterKeyHint="search"
-                    aria-label="Search customer"
-                    placeholder="Search customer…"
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                  />
-                </div>
-
-                {matches === null ? (
-                  <div className="space-y-2" aria-busy="true">
-                    {[0, 1, 2].map((i) => <div key={i} className="h-17 animate-pulse rounded-2xl bg-slate-200/60" />)}
-                  </div>
-                ) : matches.length === 0 ? (
-                  <p className="px-2 py-6 text-center text-sm text-slate-500">{search ? `No customer matches “${search}”.` : 'No customers yet.'}</p>
-                ) : (
-                  <ul role="radiogroup" aria-label="Customer" className="space-y-2">
-                    {/* Keep the selected customer in view (e.g. one just added) even when the list doesn't include them. */}
-                    {(customer && !isWalkIn && !search && !matches.some((m) => m.id === customer.id) ? [customer, ...matches] : matches).map((c) => {
-                      const sel = customer?.id === c.id
-                      return (
-                        <li key={c.id}>
-                          <button
-                            type="button"
-                            role="radio"
-                            aria-checked={sel}
-                            onClick={() => setCustomer(c)}
-                            className={`flex w-full items-center gap-3 rounded-2xl border p-3 text-left transition-colors ${
-                              sel ? 'border-blue-500 bg-blue-50/60 ring-1 ring-blue-500' : 'border-slate-200/80 bg-white active:bg-slate-50'
-                            }`}
-                          >
-                            <PersonTile />
-                            <span className="min-w-0 flex-1">
-                              <span className="block truncate font-semibold text-slate-900">{c.full_name}</span>
-                              <span className="block truncate text-sm text-slate-500">{c.contact || c.customer_code}</span>
-                            </span>
-                            <span aria-hidden className={`grid size-6 shrink-0 place-items-center rounded-full border-2 ${sel ? 'border-blue-600' : 'border-slate-300'}`}>
-                              {sel && <span className="size-3 rounded-full bg-blue-600" />}
-                            </span>
-                          </button>
-                        </li>
-                      )
-                    })}
-                  </ul>
-                )}
-
-                <button
-                  type="button"
-                  onClick={() => setAddingCustomer(true)}
-                  className="flex min-h-13 w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-blue-300 bg-white font-semibold text-blue-700 active:bg-blue-50"
-                >
-                  <Icon className="h-5 w-5">{I.plus}</Icon>
-                  Add New Customer
-                </button>
-              </>
+              <ul role="radiogroup" aria-label="Customer" className="space-y-2">
+                {/* Keep the selected customer in view (e.g. one just added) even when the list doesn't include them. */}
+                {(customer && !search && !matches.some((m) => m.id === customer.id) ? [customer, ...matches] : matches).map((c) => {
+                  const sel = customer?.id === c.id
+                  return (
+                    <li key={c.id}>
+                      <button
+                        type="button"
+                        role="radio"
+                        aria-checked={sel}
+                        onClick={() => setCustomer(c)}
+                        className={`flex w-full items-center gap-3 rounded-2xl border p-3 text-left transition-colors ${
+                          sel ? 'border-blue-500 bg-blue-50/60 ring-1 ring-blue-500' : 'border-slate-200/80 bg-white active:bg-slate-50'
+                        }`}
+                      >
+                        <PersonTile />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate font-semibold text-slate-900">{c.full_name}</span>
+                          <span className="block truncate text-sm text-slate-500">{c.contact || c.customer_code}</span>
+                        </span>
+                        <span aria-hidden className={`grid size-6 shrink-0 place-items-center rounded-full border-2 ${sel ? 'border-blue-600' : 'border-slate-300'}`}>
+                          {sel && <span className="size-3 rounded-full bg-blue-600" />}
+                        </span>
+                      </button>
+                    </li>
+                  )
+                })}
+              </ul>
             )}
+
+            <button
+              type="button"
+              onClick={() => setAddingCustomer(true)}
+              className="flex min-h-13 w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-blue-300 bg-white font-semibold text-blue-700 active:bg-blue-50"
+            >
+              <Icon className="h-5 w-5">{I.plus}</Icon>
+              Add New Customer
+            </button>
           </>,
-          <button type="button" onClick={customerNext} disabled={!walkIn && !customer} className={primary}>
+          <button type="button" onClick={customerNext} disabled={!customer} className={primary}>
             <NextLabel>
               <span className="min-w-0 truncate">
-                {walkIn ? 'Continue as walk-in' : customer && !isWalkIn ? `Continue with ${customer.full_name.split(/\s+/)[0]}` : 'Select a customer'}
+                {customer ? `Continue with ${customer.full_name.split(/\s+/)[0]}` : 'Select a customer'}
               </span>
             </NextLabel>
           </button>,
@@ -682,8 +671,8 @@ export default function NewOrder() {
         {addingCustomer && (
           <Sheet label="New customer" onClose={() => setAddingCustomer(false)}>
             <CustomerForm
-              initial={{ ...emptyCustomer, fullName: search }}
-              submitLabel="Save & select"
+              initial={{ ...emptyCustomer, ...(searchIsPhone ? { contact: search.trim() } : { fullName: search.trim() }) }}
+              submitLabel="Save & continue"
               onCancel={() => setAddingCustomer(false)}
               onSubmit={async (c) => {
                 const created = await getCustomer(await createCustomer(c))
@@ -691,6 +680,7 @@ export default function NewOrder() {
                 setCustomer(created)
                 setSearch('')
                 setAddingCustomer(false)
+                goTo('services') // selected: carry straight on with the order
               }}
             />
           </Sheet>
@@ -885,14 +875,14 @@ export default function NewOrder() {
                           <label className="mt-2 flex items-center gap-2 text-xs text-slate-500">
                             Weight
                             <span className="relative">
-                              <input
+                              <NumberInput
                                 className="h-11 w-24 rounded-xl border border-slate-200 bg-white pl-3 pr-8 text-sm font-semibold tabular-nums text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                                inputMode="decimal"
+                                maxInt={4}
                                 placeholder="0"
                                 aria-label={`${s.name} weight in kg`}
                                 aria-invalid={w === undefined}
                                 value={weight[s.id] ?? ''}
-                                onChange={(e) => setWeight(s, e.target.value)}
+                                onChange={(v) => setWeight(s, v)}
                               />
                               <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">kg</span>
                             </span>
@@ -970,7 +960,7 @@ export default function NewOrder() {
             >
               <label className="block text-sm font-medium text-slate-600">
                 Discount amount
-                <PesoInput autoFocus value={discountDraft} onChange={(e) => setDiscountDraft(e.target.value)} />
+                <PesoInput autoFocus value={discountDraft} onChange={setDiscountDraft} />
               </label>
               {(() => {
                 const c = discountDraft.trim() ? parsePesoToCents(discountDraft) : 0
@@ -1016,7 +1006,7 @@ export default function NewOrder() {
               label="Payment option"
               value={payOpt}
               onChange={(v) => { setPayOpt(v); if (v === 'later') setPaid('') }}
-              options={[{ value: 'now', label: 'Pay now' }, { value: 'later', label: 'Pay later' }]}
+              options={[{ value: 'now', label: 'Pay Now' }, { value: 'later', label: 'Pay Later' }]}
             />
             {payOpt === 'now' ? (
               <>
@@ -1026,8 +1016,8 @@ export default function NewOrder() {
                   <Segmented label="Payment method" value={method} onChange={(v) => { setMethod(v); if (v === 'cash') setReference('') }} options={METHODS} />
                 </div>
                 <label className="block text-sm font-medium text-slate-600">
-                  {method === 'cash' ? 'Cash received' : 'Amount paid'}
-                  <PesoInput value={paid} onChange={(e) => setPaid(e.target.value)} />
+                  {method === 'cash' ? 'Amount Received' : 'Amount Paid'}
+                  <PesoInput value={paid} onChange={setPaid} />
                 </label>
                 {/* One tap for the usual amounts: exact, or the bill the customer hands over. */}
                 <div role="group" aria-label="Quick amounts" className="flex flex-wrap gap-2">
@@ -1055,11 +1045,11 @@ export default function NewOrder() {
                     <input className={`${field} mt-1`} inputMode="text" autoCapitalize="characters" placeholder={method === 'gcash' ? 'GCash reference' : 'Reference'} value={reference} onChange={(e) => setReference(e.target.value)} />
                   </label>
                 )}
-                <p className="text-xs text-slate-500">A partial amount leaves the rest as balance due, collected later from the order.</p>
+                <p className="text-xs text-slate-500">A partial amount leaves the rest as Balance Due, collected at pickup.</p>
               </>
             ) : (
               <p className="rounded-xl bg-amber-50 px-3 py-2.5 text-sm text-amber-800">
-                Saved as <b>UNPAID</b> with {formatPeso(shownTotal)} balance due. Collect payment later from the order.
+                Saved as <b>Unpaid</b>. Balance Due of <b>{formatPeso(shownTotal)}</b> is collected when the customer picks up.
               </p>
             )}
           </section>
@@ -1086,7 +1076,7 @@ export default function NewOrder() {
           </section>
 
           <section className={`${card} space-y-2 p-4`}>
-            <label htmlFor="notes" className="font-semibold text-slate-900">Notes <span className="font-normal text-slate-500">(Optional)</span></label>
+            <label htmlFor="notes" className="font-semibold text-slate-900">Notes <span className="font-normal text-slate-500">(optional)</span></label>
             <div className="relative">
               <Icon className="pointer-events-none absolute left-4 top-3.5 h-5 w-5 text-slate-400">{I.note}</Icon>
               <textarea
@@ -1126,7 +1116,7 @@ export default function NewOrder() {
               <PersonTile />
               <span className="min-w-0 flex-1">
                 <span className="block truncate font-semibold text-slate-900">{customer?.full_name}</span>
-                <span className="block truncate text-sm text-slate-500">{isWalkIn ? 'Walk-in' : customer?.contact || customer?.customer_code}</span>
+                <span className="block truncate text-sm text-slate-500">{customer?.contact || customer?.customer_code}</span>
               </span>
             </div>
 
@@ -1149,10 +1139,10 @@ export default function NewOrder() {
               {(discountCents ?? 0) > 0 && <SumRow label="Discount" value={`−${formatPeso(discountCents!)}`} />}
               <SumRow label="Total" value={formatPeso(shownTotal)} className="text-lg font-bold text-slate-900" />
               <SumRow label="Payment" value={payOpt === 'later' ? 'Pay Later' : 'Pay Now'} />
-              {tender && (receivedCents ?? 0) > 0 && <SumRow label="Amount received" value={formatPeso(receivedCents!)} />}
-              <SumRow label={(paidCents ?? 0) > 0 ? `Paid (${methodLabel})` : 'Paid'} value={formatPeso(paidCents ?? 0)} />
+              {tender && (receivedCents ?? 0) > 0 && <SumRow label="Amount Received" value={formatPeso(receivedCents!)} />}
+              <SumRow label={(paidCents ?? 0) > 0 ? `Amount Paid (${methodLabel})` : 'Amount Paid'} value={formatPeso(paidCents ?? 0)} />
               <SumRow
-                label={<span className="flex items-center gap-2">Balance <PaymentBadge status={paymentStatus(shownTotal, paidCents ?? 0)} /></span>}
+                label={<span className="flex items-center gap-2">Balance Due <PaymentBadge status={paymentStatus(shownTotal, paidCents ?? 0)} /></span>}
                 value={formatPeso(balance)}
               />
               <SumRow label="Pickup" value={expectedPickup ? pickupLabel(pickupDate, pickupTime) : 'ASAP'} />

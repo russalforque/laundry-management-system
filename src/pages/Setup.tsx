@@ -51,7 +51,7 @@ function ChooseRole({ value, onChange, onContinue }: { value: SetupRole; onChang
   return (
     <AuthScreen>
       <TopBar />
-      <h1 className="mt-4 text-[28px] font-bold leading-tight tracking-tight text-slate-900">Let's Setup<br />Your App</h1>
+      <h1 className="mt-4 text-[28px] font-bold leading-tight tracking-tight text-slate-900">Let's Set Up<br />Your App</h1>
       <p className="mt-2 max-w-60 text-[15px] leading-snug text-slate-500">Choose how you want to use Sellix Laundry.</p>
 
       <div role="radiogroup" aria-label="Role" className="mt-8 space-y-3">

@@ -5,6 +5,7 @@ import {
   BackHeader, card, EmptyCard, Field, field, FilterTabs, primary, SearchRow, Section,
 } from '../components/Manage'
 import { Segmented, Select, Toggle } from '../components/Controls'
+import { NumberInput } from '../components/NumberInput'
 import {
   createService, deleteService, listInclusions, listServices, priceUnit, serviceRecentOrders, serviceStats, setServiceActive, updateService,
   type ServiceOrder, type ServiceStats,
@@ -295,7 +296,7 @@ function ServiceForm({ initial, all, defaultMaxKg, onSaved, onCancel }: {
       }
       onSaved(form.id ? (await updateService(form.id, input), form.id) : await createService(input))
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed.')
+      setError(err instanceof Error ? err.message : 'Something went wrong. Please try again.')
       setBusy(false)
     }
   }
@@ -346,7 +347,7 @@ function ServiceForm({ initial, all, defaultMaxKg, onSaved, onCancel }: {
           <Section title="Pricing">
             <div className="grid grid-cols-2 gap-3">
               <Field label="Price" icon={I.peso} required>
-                <input className={field} placeholder="Enter price" inputMode="decimal" value={form.price} onChange={(e) => set('price', e.target.value)} required />
+                <NumberInput className={field} placeholder="Enter price" value={form.price} onChange={(v) => set('price', v)} required />
               </Field>
               <label className="block min-w-0">
                 <span className="text-sm font-semibold text-slate-800">Pricing Type<span className="text-red-500"> *</span></span>
@@ -359,12 +360,12 @@ function ServiceForm({ initial, all, defaultMaxKg, onSaved, onCancel }: {
             </div>
             {usesLoads(form.pricingType) && form.kind !== 'addon' && (
               <Field label="Max Weight per Load (kg)" icon={I.washer}>
-                <input
+                <NumberInput
                   className={field}
-                  inputMode="decimal"
+                  maxInt={4}
                   placeholder={defaultMaxKg ? `Default: ${defaultMaxKg} kg (Settings)` : 'No limit set in Settings'}
                   value={form.maxKg}
-                  onChange={(e) => set('maxKg', e.target.value)}
+                  onChange={(v) => set('maxKg', v)}
                 />
               </Field>
             )}
@@ -443,7 +444,7 @@ function ServiceDetail({ s, all, inclusions, defaultMaxKg, onBack, onEdit, onOpe
       await fn()
       setError('')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed.')
+      setError(err instanceof Error ? err.message : 'Something went wrong. Please try again.')
     } finally {
       setBusy(false)
     }
@@ -666,7 +667,7 @@ export default function Services() {
     <div className="mx-auto max-w-5xl space-y-5 pb-28">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="text-3xl font-bold tracking-tight text-slate-900">Services</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900">Services</h1>
           <p className="mt-1 text-sm text-slate-500">Services, packages, add-ons and their prices.</p>
         </div>
       </div>

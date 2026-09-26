@@ -21,7 +21,7 @@ export function Toast({ msg, onDismiss, className = '' }: { msg: NonNullable<Msg
   return (
     <div
       role={msg.ok ? 'status' : 'alert'}
-      className={`flex items-start gap-3 rounded-xl py-2 pl-3 pr-1 text-sm font-medium ${msg.ok ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-700'} ${className}`}
+      className={`flex animate-toast-in items-start gap-3 rounded-xl py-2 pl-3 pr-1 text-sm font-medium transition-colors ${msg.ok ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-700'} ${className}`}
     >
       <Icon className="mt-2.5 h-5 w-5 shrink-0">{msg.ok ? I.check : I.info}</Icon>
       <span className="min-w-0 flex-1 py-2">{msg.text}</span>

@@ -123,7 +123,7 @@ function UserForm({ initial, onSaved, onCancel }: { initial: Form; onSaved: (id?
       else await createUser(form)
       onSaved(form.id)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed.')
+      setError(err instanceof Error ? err.message : 'Something went wrong. Please try again.')
       setBusy(false)
     }
   }
@@ -230,7 +230,7 @@ function UserDetail({ u, onBack, onEdit, onChanged }: { u: User; onBack: () => v
       setError('')
       await onChanged()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed.')
+      setError(err instanceof Error ? err.message : 'Something went wrong. Please try again.')
     } finally {
       setBusy(false)
     }
@@ -370,7 +370,7 @@ export default function Users() {
 
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="text-3xl font-bold tracking-tight text-slate-900">Users</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900">Users</h1>
           <p className="mt-1 text-sm text-slate-500">Manage staff accounts and access permissions.</p>
         </div>
       </div>

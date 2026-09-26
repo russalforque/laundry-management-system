@@ -14,6 +14,7 @@ import {
 } from '../db/reports'
 import { TYPE_UNIT, typeOf } from '../lib/pricing'
 import { formatPeso } from '../lib/money'
+import { formatNumber } from '../lib/number'
 import { STATUS_LABEL } from '../lib/orders'
 import type { OrderStatus } from '../types'
 
@@ -102,12 +103,12 @@ const unitOf = (s: ServiceUsage) => (s.pricing_method === 'fixed' ? '×' : TYPE_
 
 const SECTIONS: Record<View, (d: Data) => (string | number)[][]> = {
   sales: (d) => [
-    ['Date', 'Orders', 'Sales (order date)', 'Collected (payment date)', 'Cash', 'GCash / non-cash', 'Outstanding'],
-    ...d.daily.map((r) => [r.date, r.orders, money(r.sales_cents), money(r.collected_cents), money(r.cash_cents), money(r.collected_cents - r.cash_cents), money(r.outstanding_cents)]),
+    ['Date', 'Orders', 'Order value (order date)', 'Collected net of refunds (payment date)', 'Cash', 'GCash / non-cash', 'Refunds', 'Balance due'],
+    ...d.daily.map((r) => [r.date, r.orders, money(r.sales_cents), money(r.collected_cents), money(r.cash_cents), money(r.collected_cents - r.cash_cents), money(r.refunds_cents), money(r.outstanding_cents)]),
   ],
   orders: (d) => [['Status', 'Orders'], ...d.orders.byStatus.map((s) => [STATUS_LABEL[s.status], s.orders]), [], ['Date', 'Orders'], ...d.orders.byDate.map((r) => [r.date, r.orders])],
-  services: (d) => [['Service', 'Unit', 'Quantity', 'Orders', 'Revenue'], ...d.services.map((s) => [s.service_name, unitOf(s), s.quantity, s.orders, money(s.revenue_cents)])],
-  customers: (d) => [['Customer', 'Code', 'Orders', 'Spending', 'Balance'], ...d.customers.map((c) => [c.full_name, c.customer_code, c.orders, money(c.spent_cents), money(c.outstanding_cents)])],
+  services: (d) => [['Service', 'Unit', 'Quantity', 'Orders', 'Order value'], ...d.services.map((s) => [s.service_name, unitOf(s), s.quantity, s.orders, money(s.revenue_cents)])],
+  customers: (d) => [['Customer', 'Code', 'Orders', 'Billed', 'Balance due'], ...d.customers.map((c) => [c.full_name, c.customer_code, c.orders, money(c.spent_cents), money(c.outstanding_cents)])],
 }
 
 function exportCsv(d: Data, from: string, to: string, view?: View) {
@@ -132,10 +133,10 @@ const STATUS_TONE: Record<OrderStatus, string> = {
 }
 
 const CATEGORIES: { id: View; title: string; tab: string; text: string; icon: ReactNode }[] = [
-  { id: 'sales', title: 'Sales Report', tab: 'Sales', text: 'Sales, collections and balances by day', icon: I.chart },
+  { id: 'sales', title: 'Sales Report', tab: 'Sales', text: 'Order value, collections and balances by day', icon: I.chart },
   { id: 'orders', title: 'Orders Report', tab: 'Orders', text: 'Order volume and status', icon: I.report },
-  { id: 'customers', title: 'Customer Report', tab: 'Customers', text: 'Top customers and unpaid balances', icon: I.user },
-  { id: 'services', title: 'Service Report', tab: 'Services', text: 'Most used services and their revenue', icon: I.shirt },
+  { id: 'customers', title: 'Customer Report', tab: 'Customers', text: 'Top customers and balances due', icon: I.user },
+  { id: 'services', title: 'Service Report', tab: 'Services', text: 'Most used services and their order value', icon: I.shirt },
 ]
 
 // ---------- building blocks ----------
@@ -155,7 +156,7 @@ function EmptyState({ icon, text }: { icon: ReactNode; text: string }) {
       <span className="grid h-12 w-12 place-items-center rounded-full bg-slate-100 text-slate-400">
         <Icon className="h-6 w-6">{icon}</Icon>
       </span>
-      <p className="mt-3 text-sm font-semibold text-slate-900">No data for this period</p>
+      <p className="mt-3 text-sm font-semibold text-slate-900">No orders in this period</p>
       <p className="mt-1 max-w-xs text-sm text-slate-500">{text}</p>
     </div>
   )
@@ -308,7 +309,7 @@ function ServiceList({ rows, limit, showQty }: { rows: ServiceUsage[]; limit?: n
                 <span className="shrink-0 font-bold tabular-nums text-slate-900">{formatPeso(s.revenue_cents)}</span>
               </div>
               <div className="truncate text-xs text-slate-500">
-                {showQty && <>{s.quantity}{s.pricing_method === 'fixed' ? '×' : ` ${unitOf(s)}`} · </>}
+                {showQty && <>{formatNumber(s.quantity)}{s.pricing_method === 'fixed' ? '×' : ` ${unitOf(s)}`} · </>}
                 {plural(s.orders, 'order')}
               </div>
               <div className="mt-2 flex items-center gap-3">
@@ -342,7 +343,7 @@ function Insight({ children, onClick }: { children: ReactNode; onClick?: () => v
  * label/value pairs), so nothing scrolls sideways. `foot` is the totals row.
  */
 function DataTable({ head, rows, foot }: { head: string[]; rows: ReactNode[][]; foot?: ReactNode[] }) {
-  if (rows.length === 0) return <div className={`${card} p-6 text-center text-sm text-slate-500`}>No data for this period.</div>
+  if (rows.length === 0) return <div className={`${card} p-6 text-center text-sm text-slate-500`}>No orders in this period. Pick another period above.</div>
   const pairs = (r: ReactNode[]) => r.slice(1).map((c, j) => ({ label: head[j + 1]!, value: c }))
   const mobileRow = (r: ReactNode[], total = false) => {
     const [first, ...rest] = pairs(r)
@@ -440,25 +441,26 @@ function ReportDetail({ view, data, from, to, vs, onView }: { view: View; data: 
     const collected = sum(daily, (d) => d.collected_cents)
     const cash = sum(daily, (d) => d.cash_cents)
     const outstanding = sum(daily, (d) => d.outstanding_cents)
+    const refunded = sum(daily, (d) => d.refunds_cents)
     return (
       <>
-        <HeroFigure label="Total sales" value={formatPeso(now.revenue_cents)} trend={<Trend now={now.revenue_cents} prev={prev.revenue_cents} />} note={note} />
+        <HeroFigure label="Order value" value={formatPeso(now.revenue_cents)} trend={<Trend now={now.revenue_cents} prev={prev.revenue_cents} />} note={note} />
         <div className="grid grid-cols-2 gap-2">
-          <MiniStat label="Collected" value={shortPeso(collected)} trend={<span className="block text-xs text-slate-500">Cash {shortPeso(cash)} · GCash/other {shortPeso(collected - cash)}</span>} />
-          <MiniStat label="Unpaid" value={shortPeso(outstanding)} trend={<span className={`text-xs ${outstanding ? 'font-semibold text-amber-700' : 'text-slate-500'}`}>{outstanding ? 'Still to collect' : 'All paid'}</span>} />
+          <MiniStat label="Collected" value={shortPeso(collected)} trend={<span className="block text-xs text-slate-500">Cash {shortPeso(cash)} · GCash/other {shortPeso(collected - cash)}{refunded ? ` · ${shortPeso(refunded)} refunded` : ''}</span>} />
+          <MiniStat label="Balance Due" value={shortPeso(outstanding)} trend={<span className={`text-xs ${outstanding ? 'font-semibold text-amber-700' : 'text-slate-500'}`}>{outstanding ? 'Still to collect' : 'All fully paid'}</span>} />
         </div>
         <section>
-          <SectionHeader title="Sales over time" />
-          <BarChart label="Sales over time" from={from} to={to} values={new Map(daily.map((d) => [d.date, d.sales_cents]))} format={shortPeso} unit={formatPeso} />
+          <SectionHeader title="Order value over time" />
+          <BarChart label="Order value over time" from={from} to={to} values={new Map(daily.map((d) => [d.date, d.sales_cents]))} format={shortPeso} unit={formatPeso} />
         </section>
         {top && totalSvc > 0 && (
           <Insight onClick={() => onView('services')}>
-            <b className="font-semibold text-slate-900">{top.service_name}</b> is your top service: {Math.round((top.revenue_cents / totalSvc) * 100)}% of sales this period.
+            <b className="font-semibold text-slate-900">{top.service_name}</b> is your top service: {Math.round((top.revenue_cents / totalSvc) * 100)}% of order value this period.
           </Insight>
         )}
         <section>
           <SectionHeader
-            title="Sales by service"
+            title="Order value by service"
             action={services.length > 5 && <button onClick={() => onView('services')} className="-mr-2 min-h-11 rounded-lg px-2 text-sm font-semibold text-blue-600 active:bg-blue-50">See all {services.length}</button>}
           />
           <ServiceList rows={services} limit={5} />
@@ -466,7 +468,7 @@ function ReportDetail({ view, data, from, to, vs, onView }: { view: View; data: 
         <section>
           <SectionHeader title="Daily breakdown" />
           <DataTable
-            head={['Date', 'Orders', 'Sales', 'Collected', 'Unpaid']}
+            head={['Date', 'Orders', 'Order value', 'Collected', 'Balance Due']}
             rows={daily.map((d) => [longDate(d.date), d.orders, formatPeso(d.sales_cents), formatPeso(d.collected_cents), formatPeso(d.outstanding_cents)])}
             foot={['Total', sum(daily, (d) => d.orders), formatPeso(sum(daily, (d) => d.sales_cents)), formatPeso(collected), formatPeso(outstanding)]}
           />
@@ -516,9 +518,9 @@ function ReportDetail({ view, data, from, to, vs, onView }: { view: View; data: 
   if (view === 'services') {
     return (
       <>
-        <HeroFigure label="Service revenue" value={formatPeso(sum(services, (s) => s.revenue_cents))} note={`${plural(services.length, 'service')} used this period`} />
+        <HeroFigure label="Service order value" value={formatPeso(sum(services, (s) => s.revenue_cents))} note={`${plural(services.length, 'service')} used this period`} />
         <section>
-          <SectionHeader title="All services · by revenue" />
+          <SectionHeader title="All services · by order value" />
           <ServiceList rows={services} showQty />
         </section>
       </>
@@ -530,15 +532,15 @@ function ReportDetail({ view, data, from, to, vs, onView }: { view: View; data: 
   const owing = customers.filter((c) => c.outstanding_cents > 0).length
   return (
     <>
-      <HeroFigure label="Customers served" value={customers.length.toLocaleString('en-PH')} note={`${formatPeso(spent)} total spending`} />
+      <HeroFigure label="Customers served" value={customers.length.toLocaleString('en-PH')} note={`${formatPeso(spent)} total billed`} />
       {due > 0 && (
         <div className="flex items-center gap-3 rounded-2xl border border-amber-100 bg-amber-50 p-3 text-sm text-amber-800">
           <Icon className="h-5 w-5 shrink-0">{I.info}</Icon>
-          <span><b className="font-semibold">{formatPeso(due)}</b> unpaid across {plural(owing, 'customer')}.</span>
+          <span><b className="font-semibold">{formatPeso(due)}</b> Balance Due across {plural(owing, 'customer')}.</span>
         </div>
       )}
       <section>
-        <SectionHeader title="Top customers · by spending" />
+        <SectionHeader title="Top customers · by amount billed" />
         {customers.length === 0 ? <div className={card}><EmptyState icon={I.user} text="Customers with orders in this period will appear here." /></div> : (
           <ol className={`${card} divide-y divide-slate-100`}>
             {customers.map((c, i) => (
@@ -630,7 +632,7 @@ export default function Reports() {
       ? (
         <div className={`${card} flex flex-col items-center p-6 text-center`}>
           <p className="font-semibold text-slate-900">Couldn't load reports</p>
-          <p className="mt-1 text-sm text-slate-500">Check the app and try again.</p>
+          <p className="mt-1 text-sm text-slate-500">Please try again. If this keeps happening, close and reopen the app.</p>
           <button type="button" onClick={() => setAttempt((n) => n + 1)} className="mt-3 inline-flex min-h-11 items-center gap-2 rounded-xl px-5 font-semibold text-blue-700 active:bg-blue-50">
             <Icon className="h-5 w-5">{I.refresh}</Icon>Try again
           </button>
@@ -668,7 +670,7 @@ export default function Reports() {
         {period}
 
         {body ?? (data && valid && <ReportDetail view={view} data={data} from={from} to={to} vs={vs} onView={setView} />)}
-        <p className="px-1 text-xs text-slate-400">Cancelled orders are excluded from sales, service and customer figures. Sales use the order date. Collected, Cash and GCash use the payment date, including balances paid on older orders.</p>
+        <p className="px-1 text-xs text-slate-400">Order value is the total of orders taken (by order date), paid or not; cancelled orders are excluded. Collected, Cash and GCash are money actually received (by payment date, including balances paid on older orders), minus refunds given.</p>
       </div>
     )
   }
@@ -689,7 +691,7 @@ export default function Reports() {
 
       <div className="flex items-end justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="text-3xl font-bold tracking-tight text-slate-900">Reports</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900">Reports</h1>
           <p className="mt-1 text-sm text-slate-500">How the business is doing.</p>
         </div>
         {exportBtn}
@@ -700,7 +702,7 @@ export default function Reports() {
       {body ?? (d && valid && (
         <>
           <HeroFigure
-            label="Revenue"
+            label="Order value"
             value={formatPeso(d.now.revenue_cents)}
             trend={<Trend now={d.now.revenue_cents} prev={d.prev.revenue_cents} />}
             note={`vs ${vs}`}
@@ -748,7 +750,7 @@ export default function Reports() {
           <Icon className="h-5 w-5 shrink-0 text-slate-400">{I.chevron}</Icon>
         </Link>
       )}
-      <p className="px-1 text-xs text-slate-400">Turnaround = average days from received to released. Cancelled orders are excluded.</p>
+      <p className="px-1 text-xs text-slate-400">Turnaround = average days from received to completed (picked up). Cancelled orders are excluded.</p>
     </div>
   )
 }

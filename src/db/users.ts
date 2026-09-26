@@ -2,6 +2,7 @@ import { hashPassword, verifyPassword } from '../lib/hash'
 import { requirePermission, STAFF_ROLE } from '../lib/permissions'
 import type { Role, User } from '../types'
 import { query, queryOne, run } from './client'
+import { ORDER_CUSTOMER_NAME } from './customers'
 import { setSetting } from './settings'
 
 const COLS = 'id, username, full_name, role, active, created_at'
@@ -253,7 +254,7 @@ export interface UserActivity {
 export const userActivity = async (userId: number, limit = 5) => {
   requirePermission('users.manage')
   return query<UserActivity>(
-    `SELECT o.id, o.order_number, o.created_at, c.full_name AS customer_name, o.total_cents
+    `SELECT o.id, o.order_number, o.created_at, ${ORDER_CUSTOMER_NAME} AS customer_name, o.total_cents
      FROM orders o JOIN customers c ON c.id = o.customer_id
      WHERE o.created_by = ? ORDER BY o.created_at DESC LIMIT ?`,
     [userId, limit],

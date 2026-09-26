@@ -2,26 +2,50 @@ import { isFinal } from '../lib/orders'
 import { requirePermission } from '../lib/permissions'
 import type { Machine, MachineAssignment, MachineStatus, MachineType, OrderStatus } from '../types'
 import { query, run, transaction, type Tx } from './client'
+import { ORDER_CUSTOMER_NAME } from './customers'
 
 export const MACHINE_PREFIX: Record<MachineType, string> = { washer: 'W', dryer: 'D' }
 export const MACHINE_TYPE_LABEL: Record<MachineType, string> = { washer: 'Washer', dryer: 'Dryer' }
 export const MACHINE_STATUS_LABEL: Record<MachineStatus, string> = {
   available: 'Available',
   in_use: 'In Use',
-  out_of_service: 'Out of Service',
+  done: 'Done',
+  out_of_service: 'Inactive',
 }
 /** The order status a machine type puts an order in. */
 const STATUS_FOR: Record<MachineType, OrderStatus> = { washer: 'washing', dryer: 'drying' }
 
 const NOW = "strftime('%Y-%m-%dT%H:%M:%fZ','now')"
 
-export const machineStatus = (m: Pick<Machine, 'order_id' | 'out_of_service'>): MachineStatus =>
-  m.order_id ? 'in_use' : m.out_of_service ? 'out_of_service' : 'available'
+/** Allowed preset cycle length, in minutes. */
+export const CYCLE_MIN = 1
+export const CYCLE_MAX = 600
+
+/** "W03" + washer → "Washer 03". */
+export const machineName = (code: string, type: MachineType) => `${MACHINE_TYPE_LABEL[type]} ${code.slice(1)}`
+
+/** Whether a started cycle's time is up. Cycles without a timer (none since timers were added) count as done. */
+export const cycleDone = (expectedEndAt: string | null, now = Date.now()) => !expectedEndAt || Date.parse(expectedEndAt) <= now
+
+/**
+ * Done is derived from the stored expected end time rather than written by a timer, so it's right the moment the
+ * app opens again — after navigation, backgrounding, a restart or a reboot — with nothing to catch up on.
+ */
+export const machineStatus = (m: Pick<Machine, 'order_id' | 'out_of_service' | 'expected_end_at'>, now = Date.now()): MachineStatus =>
+  m.order_id ? (cycleDone(m.expected_end_at, now) ? 'done' : 'in_use') : m.out_of_service ? 'out_of_service' : 'available'
+
+/**
+ * Fired after anything starts, ends or moves a cycle, so timer alerts (lib/machineAlerts.ts) and open screens
+ * can follow without the db layer depending on them.
+ */
+export const machineEvents = new EventTarget()
+export const machinesChanged = () => machineEvents.dispatchEvent(new Event('change'))
 
 /** Machines with the order currently inside each, sorted W01, W02 … W10. */
 export const listMachines = (type?: MachineType) =>
   query<Machine>(
-    `SELECT m.*, a.order_id, o.order_number, c.full_name AS customer_name, a.started_at
+    `SELECT m.*, a.order_id, o.order_number, ${ORDER_CUSTOMER_NAME} AS customer_name, a.started_at,
+       a.duration_minutes, a.expected_end_at
      FROM machines m
      LEFT JOIN machine_assignments a ON a.machine_id = m.id AND a.ended_at IS NULL
      LEFT JOIN orders o ON o.id = a.order_id
@@ -48,6 +72,12 @@ export interface MachineInput {
   code: string
   notes: string
   outOfService: boolean
+  cycleMinutes: number
+}
+
+function checkCycle(minutes: number) {
+  if (!Number.isInteger(minutes) || minutes < CYCLE_MIN || minutes > CYCLE_MAX)
+    throw new Error(`Cycle duration must be a whole number of minutes from ${CYCLE_MIN} to ${CYCLE_MAX}.`)
 }
 
 async function guardDuplicate<T>(fn: () => Promise<T>) {
@@ -62,8 +92,9 @@ export async function createMachine(type: MachineType, i: MachineInput) {
   requirePermission('machines.configure')
   const code = normalizeCode(type, i.code)
   if (!code) throw new Error(`Machine number must look like ${MACHINE_PREFIX[type]}01.`)
+  checkCycle(i.cycleMinutes)
   await guardDuplicate(() =>
-    run('INSERT INTO machines (code, type, notes, out_of_service) VALUES (?,?,?,?)', [code, type, i.notes.trim(), i.outOfService ? 1 : 0]),
+    run('INSERT INTO machines (code, type, notes, out_of_service, cycle_minutes) VALUES (?,?,?,?,?)', [code, type, i.notes.trim(), i.outOfService ? 1 : 0, i.cycleMinutes]),
   )
 }
 
@@ -77,11 +108,13 @@ export async function updateMachine(id: number, i: MachineInput) {
     if (!m) throw new Error('Machine not found.')
     const code = normalizeCode(m.type, i.code)
     if (!code) throw new Error(`Machine number must look like ${MACHINE_PREFIX[m.type]}01.`)
+    checkCycle(i.cycleMinutes)
     const [busy] = await openAssignment(tx, id)
-    if (busy && i.outOfService) throw new Error('This machine is in use. Finish or move the order before marking it Out of Service.')
+    if (busy && i.outOfService) throw new Error('This machine is in use. Unload or move the order before making it Inactive.')
     if (busy && code !== m.code) throw new Error('This machine is in use. Finish or move the order before renumbering it.')
     await guardDuplicate(() =>
-      tx.run(`UPDATE machines SET code = ?, notes = ?, out_of_service = ?, updated_at = ${NOW} WHERE id = ?`, [code, i.notes.trim(), i.outOfService ? 1 : 0, id]),
+      // A new duration applies from the next start; a running cycle keeps the one it started with.
+      tx.run(`UPDATE machines SET code = ?, notes = ?, out_of_service = ?, cycle_minutes = ?, updated_at = ${NOW} WHERE id = ?`, [code, i.notes.trim(), i.outOfService ? 1 : 0, i.cycleMinutes, id]),
     )
   })
 }
@@ -91,10 +124,18 @@ export async function deleteMachine(id: number) {
   requirePermission('machines.configure')
   return transaction(async (tx) => {
     const [busy] = await openAssignment(tx, id)
-    if (busy) throw new Error('This machine is in use. Finish or move the order before deleting it.')
+    if (busy) throw new Error('This machine is in use. Unload or move the order before deleting it.')
     await tx.run('DELETE FROM machines WHERE id = ?', [id])
   })
 }
+
+/** Every cycle still open (running or done, not yet unloaded), for timer alerts. */
+export const listOpenCycles = () =>
+  query<{ id: number; order_id: number; machine_code: string; machine_type: MachineType; expected_end_at: string | null; order_number: string; customer_name: string }>(
+    `SELECT a.id, a.order_id, a.machine_code, a.machine_type, a.expected_end_at, o.order_number, ${ORDER_CUSTOMER_NAME} AS customer_name
+     FROM machine_assignments a JOIN orders o ON o.id = a.order_id JOIN customers c ON c.id = o.customer_id
+     WHERE a.ended_at IS NULL`,
+  )
 
 /** Current machine (if any) and full machine history for one order, oldest first. */
 export async function getOrderMachines(orderId: number) {
@@ -124,22 +165,24 @@ async function orderStatus(tx: Tx, orderId: number) {
 }
 
 /**
- * Puts an order into a machine. Covers Start Washing (Received → Washing), Move to Dryer (washed
+ * Starts a machine for an order using the machine's preset cycle: started_at = now, expected_end_at = now + cycle.
+ * Staff never type a duration. Covers Start Washing (Received → Washing), Move to Dryer (washed
  * order → Drying) and Change Machine (same type; the old machine is freed). Touches only machine
  * assignments and the workflow status — never items, totals, payments or the customer.
  * Payment status is deliberately ignored: Pay Later orders are processed like any other.
  */
 export async function assignMachine(orderId: number, machineId: number) {
   const userId = requirePermission('machines.operate').id // the signed-in employee, never passed in
-  return transaction(async (tx) => {
+  await transaction(async (tx) => {
     const status = await orderStatus(tx, orderId)
     if (isFinal(status)) throw new Error('This order is closed and can no longer use a machine.')
 
-    const [m] = await tx.query<{ id: number; code: string; type: MachineType; out_of_service: number }>(
-      'SELECT id, code, type, out_of_service FROM machines WHERE id = ?', [machineId],
+    const [m] = await tx.query<{ id: number; code: string; type: MachineType; out_of_service: number; cycle_minutes: number }>(
+      'SELECT id, code, type, out_of_service, cycle_minutes FROM machines WHERE id = ?', [machineId],
     )
     if (!m) throw new Error('Machine not found.')
-    if (m.out_of_service) throw new Error(`${m.code} is Out of Service.`)
+    if (m.out_of_service) throw new Error(`${m.code} is Inactive.`)
+    if (!(m.cycle_minutes >= CYCLE_MIN)) throw new Error(`${m.code} has no cycle duration set. Ask an admin to set one on the Machines page.`)
 
     const [current] = await openOf(tx, orderId)
     if (current?.machine_id === m.id) return // same machine picked again: nothing to do
@@ -152,34 +195,42 @@ export async function assignMachine(orderId: number, machineId: number) {
     if (busy) throw new Error(`${m.code} is already in use by another order. Pick another machine.`)
 
     if (current) await endOpen(tx, orderId, 'changed')
+    const start = Date.now()
     await tx.run(
-      `INSERT INTO machine_assignments (machine_id, machine_code, machine_type, order_id, started_at, user_id)
-       VALUES (?,?,?,?,${NOW},?)`,
-      [m.id, m.code, m.type, orderId, userId],
+      `INSERT INTO machine_assignments (machine_id, machine_code, machine_type, order_id, started_at, duration_minutes, expected_end_at, user_id)
+       VALUES (?,?,?,?,?,?,?,?)`,
+      [m.id, m.code, m.type, orderId, new Date(start).toISOString(), m.cycle_minutes, new Date(start + m.cycle_minutes * 60_000).toISOString(), userId],
     )
     if (status !== STATUS_FOR[m.type]) await setStatus(tx, orderId, STATUS_FOR[m.type])
   })
+  machinesChanged()
 }
 
-/** Frees the washer; the order stays Washing (washed) until it moves to a dryer or is marked Ready. */
-export function finishWashing(orderId: number) {
+/** Blocks freeing a machine whose cycle is still running (In Use can't jump to Available). */
+async function requireCycleDone(tx: Tx, orderId: number) {
+  const [a] = await tx.query<{ machine_code: string; expected_end_at: string | null }>(
+    'SELECT machine_code, expected_end_at FROM machine_assignments WHERE order_id = ? AND ended_at IS NULL', [orderId],
+  )
+  if (a && !cycleDone(a.expected_end_at)) throw new Error(`${a.machine_code} is still running. Mark it as unloaded once the timer finishes.`)
+}
+
+/**
+ * Mark as Unloaded (Done → Available), once the timer is over and the laundry is out. From a washer the order stays
+ * Washing (washed) until it moves to a dryer or is marked Ready; from a dryer it becomes Ready for Pickup.
+ */
+export async function unloadMachine(orderId: number) {
   requirePermission('machines.operate')
-  return transaction(async (tx) => {
+  const type = await transaction(async (tx) => {
     const status = await orderStatus(tx, orderId)
     const [current] = await openOf(tx, orderId)
-    if (status !== 'washing' || current?.machine_type !== 'washer') throw new Error('Washing is already finished for this order.')
+    if (!current || status !== STATUS_FOR[current.machine_type]) throw new Error('This machine was already unloaded.')
+    await requireCycleDone(tx, orderId)
     await endOpen(tx, orderId, 'finished')
+    if (current.machine_type === 'dryer') await setStatus(tx, orderId, 'ready')
+    return current.machine_type
   })
-}
-
-/** Frees the dryer and moves the order to Ready for Pickup. */
-export function finishDrying(orderId: number) {
-  requirePermission('machines.operate')
-  return transaction(async (tx) => {
-    if ((await orderStatus(tx, orderId)) !== 'drying') throw new Error('Drying is already finished for this order.')
-    await endOpen(tx, orderId, 'finished')
-    await setStatus(tx, orderId, 'ready')
-  })
+  machinesChanged()
+  return type
 }
 
 /**

@@ -283,7 +283,7 @@ export function paymentReceipt(d: PaymentReceiptData, c: ReceiptConfig, logo: Bi
   r.row('Order Total', formatPeso(order.total_cents))
   r.row('Previous Balance', formatPeso(d.previousBalanceCents))
   const tendered = payment.tendered_cents
-  r.row(tendered != null ? 'AMOUNT PAID' : 'AMOUNT RECEIVED', formatPeso(payment.amount_cents), { bold: true })
+  r.row('AMOUNT PAID', formatPeso(payment.amount_cents), { bold: true })
   if (on(c, 'receipt_show_method')) {
     r.row('Method', METHOD_LABEL[payment.method] ?? payment.method)
     if (payment.reference) r.row('Reference', payment.reference)
@@ -293,7 +293,7 @@ export function paymentReceipt(d: PaymentReceiptData, c: ReceiptConfig, logo: Bi
     r.row('Change', formatPeso(tendered - payment.amount_cents), { bold: true })
   }
   r.row('Total Paid', formatPeso(d.paidAfterCents))
-  r.row('Remaining Balance', formatPeso(d.balanceAfterCents), { bold: true })
+  r.row('Balance Due', formatPeso(d.balanceAfterCents), { bold: true })
   r.rule().stamp(RECEIPT_PAY_LABEL[d.statusAfter])
   return footer(r, c, order.order_number)
 }
@@ -312,7 +312,7 @@ export function shiftReport(d: NonNullable<Awaited<ReturnType<typeof getShiftDet
   } else r.row('Status', 'OPEN')
   r.rule()
   r.row('Opening Cash', formatPeso(t.opening_cents))
-  r.row('Cash Received', formatPeso(t.cash_cents))
+  r.row('Cash Payments', formatPeso(t.cash_cents))
   r.row('Cash Refunds', formatPeso(t.outflow_cents))
   r.row('EXPECTED CASH', formatPeso(t.expected_cash_cents), { bold: true })
   r.rule()
@@ -321,11 +321,11 @@ export function shiftReport(d: NonNullable<Awaited<ReturnType<typeof getShiftDet
   if (t.refunds_cents > 0) r.row('Total Refunds', `-${formatPeso(t.refunds_cents)}`)
   if (t.collected_later_cents > 0) r.row(' incl. older orders', formatPeso(t.collected_later_cents))
   r.row('Orders Taken', String(t.orders_count))
-  r.row('Released', String(t.released_count))
+  r.row('Completed', String(t.released_count))
   if (s.actual_cash_cents != null && s.difference_cents != null) {
     const diff = s.difference_cents
     r.rule()
-    r.row('ACTUAL CASH', formatPeso(s.actual_cash_cents), { bold: true })
+    r.row('COUNTED CASH', formatPeso(s.actual_cash_cents), { bold: true })
     r.row('Difference', `${diff > 0 ? '+' : diff < 0 ? '-' : ''}${formatPeso(Math.abs(diff))}`, { bold: true })
     r.rule().stamp(diff === 0 ? 'BALANCED' : diff > 0 ? 'OVER' : 'SHORT')
   }
@@ -347,16 +347,16 @@ export function sampleOrder(status: PaymentStatus): OrderReceiptData {
   const now = new Date().toISOString()
   return {
     order: {
-      id: 0, order_number: 'SL-000123', customer_id: 0, customer_name: 'Juan Dela Cruz', customer_contact: '0917 123 4567',
+      id: 0, order_number: 'SL-000123', customer_id: 0, customer_name: 'Juan Dela Cruz', customer_contact: '0917 123 4567', guest_name: '', guest_contact: '',
       created_by: 0, created_by_name: 'Maria Santos', released_at: null, released_by_name: null, received_at: now, expected_pickup: null,
       subtotal_cents: total, discount_cents: 0, total_cents: total, paid_cents: paid, balance_cents: total - paid, refunded_cents: 0,
       payment_status: status, status: 'received', notes: '',
     },
     items: [
-      { id: 1, service_name: 'Wash + Dry + Fold', pricing_method: 'per_piece', pricing_type: 'per_load', unit_price_cents: 17500, quantity: 1, weight_kg: 7.5, included_qty: 0, note: 'Includes Wash, Dry, Fold + 1× Detergent, 1× Fabcon per load', amount_cents: 17500 },
-      { id: 2, service_name: 'Comforter (Queen)', pricing_method: 'fixed', pricing_type: 'fixed', unit_price_cents: 12000, quantity: 1, weight_kg: null, included_qty: 0, note: '', amount_cents: 12000 },
-      { id: 3, service_name: 'Detergent', pricing_method: 'per_piece', pricing_type: 'per_quantity', unit_price_cents: 1500, quantity: 2, weight_kg: null, included_qty: 1, note: '', amount_cents: 1500 },
-      { id: 4, service_name: 'Fabcon', pricing_method: 'per_piece', pricing_type: 'per_quantity', unit_price_cents: 1500, quantity: 2, weight_kg: null, included_qty: 1, note: '', amount_cents: 1500 },
+      { id: 1, service_id: 0, service_name: 'Wash + Dry + Fold', pricing_method: 'per_piece', pricing_type: 'per_load', unit_price_cents: 17500, quantity: 1, weight_kg: 7.5, included_qty: 0, note: 'Includes Wash, Dry, Fold + 1× Detergent, 1× Fabcon per load', amount_cents: 17500 },
+      { id: 2, service_id: 0, service_name: 'Comforter (Queen)', pricing_method: 'fixed', pricing_type: 'fixed', unit_price_cents: 12000, quantity: 1, weight_kg: null, included_qty: 0, note: '', amount_cents: 12000 },
+      { id: 3, service_id: 0, service_name: 'Detergent', pricing_method: 'per_piece', pricing_type: 'per_quantity', unit_price_cents: 1500, quantity: 2, weight_kg: null, included_qty: 1, note: '', amount_cents: 1500 },
+      { id: 4, service_id: 0, service_name: 'Fabcon', pricing_method: 'per_piece', pricing_type: 'per_quantity', unit_price_cents: 1500, quantity: 2, weight_kg: null, included_qty: 1, note: '', amount_cents: 1500 },
     ],
     refunds: [],
     payments: paid ? [{ id: 1, order_id: 0, amount_cents: paid, method: 'cash', paid_at: now, reference: '', tendered_cents: status === 'paid' ? 50000 : paid, user_name: 'Maria Santos' }] : [],

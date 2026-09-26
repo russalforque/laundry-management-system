@@ -1,3 +1,4 @@
+import { formatNumberInput, stripGrouping } from './number'
 /** Money is stored as integer centavos; only convert at the UI edge. */
 const fmt = new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' })
 
@@ -19,11 +20,11 @@ export function formatPickup(value: string) {
 }
 
 /**
- * Parses a peso string like "35" or "35.50" to centavos; returns null if invalid or negative.
+ * Parses a peso string like "35", "35.50" or "1,250.50" (commas and ₱ are ignored) to centavos; returns null if invalid or negative.
  * Capped at 9 whole-peso digits so centavos stay exact integers (no float precision loss).
  */
 export function parsePesoToCents(input: string): number | null {
-  const t = input.trim()
+  const t = stripGrouping(input)
   if (!/^\d{1,9}(\.\d{1,2})?$/.test(t)) return null
   const [pesos, cents = ''] = t.split('.')
   return Number(pesos) * 100 + Number(cents.padEnd(2, '0')) // digit arithmetic, never float multiplication
@@ -38,4 +39,5 @@ export function cashTender(dueCents: number, receivedCents: number) {
   return { applied, change: receivedCents - applied, remaining: Math.max(dueCents - applied, 0) }
 }
 
-export const centsToInput = (cents: number) => (cents / 100).toFixed(2)
+/** Pre-fills a money field, formatted like the field shows it: 125000 → "1,250.00". */
+export const centsToInput = (cents: number) => formatNumberInput((cents / 100).toFixed(2))

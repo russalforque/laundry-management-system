@@ -59,7 +59,7 @@ export function Toggle({ on, onChange, label, disabled }: { on: boolean; onChang
   )
 }
 
-/** Pill tabs where exactly one option is active (e.g. "Select Customer | Walk-in"). */
+/** Pill tabs where exactly one option is active (e.g. "Pay Now | Pay Later"). */
 export function Segmented<T extends string>({
   label, value, onChange, options,
 }: {

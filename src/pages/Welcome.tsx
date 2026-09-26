@@ -11,7 +11,8 @@ export function Splash({ error }: { error?: string }) {
         <BrandMark size="lg" />
         {error ? (
           <p role="alert" className="mt-10 max-w-xs rounded-2xl bg-blue-50 px-4 py-3 text-center text-sm font-semibold text-blue-900">
-            Database error: {error}
+            The app couldn't start. Close and reopen it. If this keeps happening, contact your administrator.
+            <span className="mt-1 block text-xs font-normal text-blue-800/70">Details: {error}</span>
           </p>
         ) : (
           <div role="progressbar" aria-label="Starting" className="mt-24 h-1 w-36 overflow-hidden rounded-full bg-blue-100">

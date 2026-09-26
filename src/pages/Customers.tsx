@@ -31,7 +31,7 @@ export function CustomerForm({
     try {
       await onSubmit(f)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed.')
+      setError(err instanceof Error ? err.message : 'Something went wrong. Please try again.')
       setBusy(false)
     }
   }
@@ -40,19 +40,19 @@ export function CustomerForm({
   return (
     <form onSubmit={submit} className="space-y-3">
       <label className={label}>
-        Full name
+        Full name <span className="text-red-500">*</span>
         <input className={`${fieldCls} mt-1`} placeholder="e.g. Maria Santos" value={f.fullName} onChange={(e) => set('fullName', e.target.value)} required autoFocus />
       </label>
       <label className={label}>
-        Phone number
+        Phone number <span className="font-normal text-slate-400">(optional)</span>
         <input className={`${fieldCls} mt-1`} placeholder="e.g. 0917 123 4567" inputMode="tel" value={f.contact} onChange={(e) => set('contact', e.target.value)} />
       </label>
       <label className={label}>
-        Address
+        Address <span className="font-normal text-slate-400">(optional)</span>
         <input className={`${fieldCls} mt-1`} placeholder="Street, city" value={f.address} onChange={(e) => set('address', e.target.value)} />
       </label>
       <label className={label}>
-        Notes
+        Notes <span className="font-normal text-slate-400">(optional)</span>
         <textarea className={`${fieldCls} mt-1 resize-none`} placeholder="Preferences, reminders…" rows={2} value={f.notes} onChange={(e) => set('notes', e.target.value)} />
       </label>
       {error && <p role="alert" className="rounded-xl bg-red-50 px-4 py-2.5 text-sm font-medium text-red-700">{error}</p>}
@@ -91,7 +91,7 @@ const ACTIVITY: { id: CustomerActivity; label: string }[] = [
 const SORTS: { id: CustomerSort; label: string }[] = [
   { id: 'name', label: 'Name A–Z' },
   { id: 'recent', label: 'Recent activity' },
-  { id: 'spent', label: 'Top spenders' },
+  { id: 'spent', label: 'Highest billed' },
 ]
 
 function CustomerCard({ c }: { c: CustomerListRow }) {
@@ -114,9 +114,9 @@ function CustomerCard({ c }: { c: CustomerListRow }) {
         <div className="mt-1 flex items-center gap-1.5 text-xs text-slate-500">
           <Icon className="h-3.5 w-3.5 text-slate-400">{I.calendar}</Icon>
           <span className="truncate">
-            {c.total_orders} {c.total_orders === 1 ? 'Order' : 'Orders'}
+            {c.total_orders} {c.total_orders === 1 ? 'order' : 'orders'}
             <span className="mx-1.5 text-slate-300">•</span>
-            <b className="font-semibold text-slate-700">{formatPesoShort(c.total_spent_cents)}</b> Total Spent
+            <b className="font-semibold text-slate-700">{formatPesoShort(c.total_spent_cents)}</b> billed
           </span>
           {c.outstanding_cents > 0 && (
             <span className="ml-auto shrink-0 font-semibold text-red-600">{formatPesoShort(c.outstanding_cents)} due</span>
@@ -147,7 +147,7 @@ export default function Customers() {
       <div className="md:hidden"><AppHeader /></div>
 
       <div>
-        <h1 className="text-3xl font-bold tracking-tight text-slate-900">Customers</h1>
+        <h1 className="text-2xl font-bold tracking-tight text-slate-900">Customers</h1>
         <p className="mt-1 text-sm text-slate-500">Manage your customers and their laundry history.</p>
       </div>
 
@@ -180,7 +180,7 @@ export default function Customers() {
         </div>
 
         {showSort && (
-          <div role="radiogroup" aria-label="Sort by" className="grid grid-cols-3 gap-1 rounded-xl bg-white p-1 ring-1 ring-slate-200/80">
+          <div role="radiogroup" aria-label="Sort by" className="grid animate-reveal grid-cols-3 gap-1 rounded-xl bg-white p-1 ring-1 ring-slate-200/80">
             {SORTS.map((s) => (
               <button
                 key={s.id}

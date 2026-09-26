@@ -9,36 +9,42 @@ export interface CustomerInput {
   notes: string
 }
 
+export const isValidContact = (contact: string) => /^[0-9+()\-\s]{5,20}$/.test(contact)
+
 function clean(i: CustomerInput): CustomerInput {
   const c = { fullName: i.fullName.trim(), contact: i.contact.trim(), address: i.address.trim(), notes: i.notes.trim() }
   if (!c.fullName) throw new Error('Customer name is required.')
-  if (c.contact && !/^[0-9+()\-\s]{5,20}$/.test(c.contact)) throw new Error('Contact number looks invalid.')
+  if (c.contact && !isValidContact(c.contact)) throw new Error('Contact number looks invalid.')
   return c
 }
 
+/** Contact with spaces, dashes, brackets and + removed, so "0917-123 4567" matches a typed "09171234567". */
+const CONTACT_DIGITS = "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(contact, ' ', ''), '-', ''), '(', ''), ')', ''), '+', '')"
+
+/** Search by name, phone number (any formatting; 0917… also finds +63 917…) or customer code. */
 export function searchCustomers(text = '', limit = 200) {
   const like = `%${text.trim()}%`
+  // Drop the local "0" / country "63" prefix so either way of writing a PH mobile number matches.
+  const digits = text.replace(/\D/g, '').replace(/^(63|0)/, '')
   return query<Customer>(
     `SELECT * FROM customers
-     WHERE full_name LIKE ? OR contact LIKE ? OR customer_code LIKE ?
+     WHERE full_name LIKE ? OR contact LIKE ? OR customer_code LIKE ? ${digits.length >= 3 ? `OR ${CONTACT_DIGITS} LIKE ?` : ''}
      ORDER BY full_name COLLATE NOCASE LIMIT ?`,
-    [like, like, like, limit],
+    [like, like, like, ...(digits.length >= 3 ? [`%${digits}%`] : []), limit],
   )
 }
 
 export const getCustomer = (id: number) => queryOne<Customer>('SELECT * FROM customers WHERE id = ?', [id])
 
-/** Reserved code of the shared record that walk-in orders (no customer details) are filed under. */
+/**
+ * Code of the legacy shared record that past walk-in orders are filed under. Walk-in is no longer offered:
+ * the record is kept (read-only) for those orders' history, and new orders can't be placed on it.
+ */
 export const WALK_IN_CODE = 'WALK-IN'
 
-/** The walk-in customer, created on first use. */
-export async function getWalkInCustomer(): Promise<Customer> {
-  const find = () => queryOne<Customer>('SELECT * FROM customers WHERE customer_code = ?', [WALK_IN_CODE])
-  const existing = await find()
-  if (existing) return existing
-  await run("INSERT OR IGNORE INTO customers (customer_code, full_name, contact, address, notes) VALUES (?, 'Walk-in Customer', '', '', '')", [WALK_IN_CODE])
-  return (await find())!
-}
+/** An order's customer as shown: the name/phone saved on a past walk-in order, else the customer record's. Needs aliases o and c. */
+export const ORDER_CUSTOMER_NAME = "COALESCE(NULLIF(o.guest_name, ''), c.full_name)"
+export const ORDER_CUSTOMER_CONTACT = "COALESCE(NULLIF(o.guest_contact, ''), c.contact)"
 
 export async function createCustomer(input: CustomerInput): Promise<number> {
   requirePermission('customers.manage')

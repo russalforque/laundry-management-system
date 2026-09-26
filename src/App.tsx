@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { HashRouter, Navigate, Route, Routes } from 'react-router-dom'
 import Layout from './components/Layout'
+import { MachineAlerts } from './components/MachineAlerts'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { BrandingProvider, useBranding } from './context/BrandingContext'
 import { runAutoBackupIfDue } from './db/backup'
@@ -77,6 +78,7 @@ function Gate({ boot, onBoot }: { boot: Boot; onBoot: (b: Boot) => void }) {
   }
   return (
     <HashRouter>
+      <MachineAlerts />
       <Routes>
         <Route path="/orders/:id/receipt" element={<Guard perm="orders.manage"><Receipt /></Guard>} />
         <Route element={<Layout />}>

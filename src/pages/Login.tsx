@@ -269,7 +269,7 @@ function PasswordStep({ userId, onDone }: { userId: number; onDone: (password: s
       await checkLegacyPassword(userId, value)
       onDone(value)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed.')
+      setError(err instanceof Error ? err.message : 'Something went wrong. Please try again.')
       setBusy(false)
     }
   }

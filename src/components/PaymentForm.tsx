@@ -3,6 +3,7 @@ import { addPayment } from '../db/payments'
 import { cashTender, centsToInput, formatPeso, parsePesoToCents } from '../lib/money'
 import type { PaymentMethod } from '../types'
 import { Select } from './Controls'
+import { NumberInput } from './NumberInput'
 import { StoreClosedNotice, useStoreShift } from './StoreStatus'
 import { inputCls, primaryBtn } from './ui'
 
@@ -38,7 +39,7 @@ export default function PaymentForm({ orderId, balanceCents, paidCents, onSaved 
       })
       onSaved(paymentId, method)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed.')
+      setError(err instanceof Error ? err.message : 'Something went wrong. Please try again.')
       submitting.current = false
       setBusy(false)
     }
@@ -48,25 +49,35 @@ export default function PaymentForm({ orderId, balanceCents, paidCents, onSaved 
     <form onSubmit={submit} className="mt-3 space-y-3 border-t border-slate-100 pt-3">
       <StoreClosedNotice />
       <div className="flex items-baseline justify-between text-sm text-slate-500">
-        Balance due <b className="text-base tabular-nums text-slate-900">{formatPeso(balanceCents)}</b>
+        Balance Due <b className="text-base tabular-nums text-slate-900">{formatPeso(balanceCents)}</b>
       </div>
       <div className="grid grid-cols-2 gap-3">
-        <input
-          className={inputCls} inputMode="decimal" placeholder={isCash ? 'Amount received (₱)' : 'Amount (₱)'}
-          aria-label={isCash ? 'Amount received' : 'Payment amount'} value={amount}
-          onChange={(e) => { setAmount(e.target.value); setError('') }} required
-        />
-        <Select className={inputCls} value={method} onChange={(e) => { setMethod(e.target.value as PaymentMethod); setError('') }} aria-label="Payment method">
-          <option value="cash">Cash</option>
-          <option value="gcash">GCash</option>
-          <option value="other">Other</option>
-        </Select>
+        <label className="block text-sm font-medium text-slate-600">
+          {isCash ? 'Amount Received' : 'Amount Paid'}
+          <NumberInput
+            className={`${inputCls} mt-1`} placeholder="0.00" value={amount}
+            onChange={(v) => { setAmount(v); setError('') }} required
+          />
+        </label>
+        <label className="block text-sm font-medium text-slate-600">
+          Method
+          <span className="mt-1 block">
+            <Select className={inputCls} value={method} onChange={(e) => { setMethod(e.target.value as PaymentMethod); setError('') }}>
+              <option value="cash">Cash</option>
+              <option value="gcash">GCash</option>
+              <option value="other">Other</option>
+            </Select>
+          </span>
+        </label>
       </div>
       {isCash && <CashChange dueCents={balanceCents} received={amount} />}
-      <input className={inputCls} placeholder="Reference / notes (optional)" value={reference} onChange={(e) => setReference(e.target.value)} />
+      <label className="block text-sm font-medium text-slate-600">
+        Reference / notes <span className="font-normal text-slate-400">(optional)</span>
+        <input className={`${inputCls} mt-1`} value={reference} onChange={(e) => setReference(e.target.value)} />
+      </label>
       {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
       <button disabled={busy || storeClosed} className={`${primaryBtn} w-full`}>
-        {busy ? 'Saving…' : recordCents ? `Collect ${formatPeso(recordCents)}` : 'Collect payment'}
+        {busy ? 'Saving…' : recordCents ? `Collect ${formatPeso(recordCents)}` : 'Collect Payment'}
       </button>
     </form>
   )
@@ -86,10 +97,10 @@ export function CashChange({ dueCents, received }: { dueCents: number; received:
     body = remaining > 0 ? (
       <div className="rounded-xl bg-amber-50 px-4 py-3 text-amber-800">
         <div className="flex items-baseline justify-between gap-3">
-          <span className="text-sm font-semibold">Remaining balance</span>
+          <span className="text-sm font-semibold">Balance Due</span>
           <span className="text-2xl font-bold tabular-nums">{formatPeso(remaining)}</span>
         </div>
-        <p className="text-xs">Partial payment of {formatPeso(applied)}</p>
+        <p className="text-xs">Amount Paid {formatPeso(applied)} (partial payment)</p>
       </div>
     ) : (
       <div className="rounded-xl bg-emerald-50 px-4 py-3 text-emerald-800">
@@ -97,7 +108,7 @@ export function CashChange({ dueCents, received }: { dueCents: number; received:
           <span className="text-sm font-semibold">Change</span>
           <span className="text-3xl font-bold tabular-nums">{formatPeso(change)}</span>
         </div>
-        <p className="text-xs">PAID · {formatPeso(applied)} recorded as payment</p>
+        <p className="text-xs">Amount Paid {formatPeso(applied)} · order fully paid</p>
       </div>
     )
   }
