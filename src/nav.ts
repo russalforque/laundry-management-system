@@ -14,7 +14,6 @@ export const NAV: NavItem[] = [
   { to: '/', label: 'Dashboard', icon: '🏠' },
   { to: '/orders', label: 'Orders', icon: '🧺', perm: 'orders.manage' },
   { to: '/customers', label: 'Customers', icon: '👥', perm: 'customers.manage' },
-  { to: '/machines', label: 'Machines', icon: '🌀', perm: 'machines.operate' },
   { to: '/services', label: 'Services', icon: '🏷️', perm: 'services.manage' },
   { to: '/reports', label: 'Reports', icon: '📊', perm: 'reports.view' },
   { to: '/payments', label: 'Payments', icon: '💵', perm: 'payments.collect' },

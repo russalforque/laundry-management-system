@@ -326,4 +326,70 @@ export const migrations: string[] = [
       '+' || (SELECT m.cycle_minutes FROM machines m WHERE m.id = machine_assignments.machine_id) || ' minutes')
   WHERE ended_at IS NULL AND machine_id IS NOT NULL;
   `,
+  // Machine timers retired: the washers and dryers have their own, so staff tap Washing Done / Drying Done instead of
+  // waiting on an in-app countdown. A machine is In Use exactly while its assignment is open. Each order keeps when each
+  // stage started and finished (and who started it) for history and reports; durations are completed_at - started_at.
+  // Order status stays received → washing → drying → ready → released: "Washing Done" is washing with
+  // washing_completed_at set. Backfilled from machine history. cycle_minutes / duration_minutes / expected_end_at are
+  // no longer written or read; they stay only so older rows and backups keep loading.
+  `
+  ALTER TABLE orders ADD COLUMN washing_started_at TEXT;
+  ALTER TABLE orders ADD COLUMN washing_started_by INTEGER REFERENCES users(id) ON DELETE SET NULL;
+  ALTER TABLE orders ADD COLUMN washing_completed_at TEXT;
+  ALTER TABLE orders ADD COLUMN drying_started_at TEXT;
+  ALTER TABLE orders ADD COLUMN drying_started_by INTEGER REFERENCES users(id) ON DELETE SET NULL;
+  ALTER TABLE orders ADD COLUMN drying_completed_at TEXT;
+
+  UPDATE orders SET
+    washing_started_at = (SELECT a.started_at FROM machine_assignments a WHERE a.order_id = orders.id AND a.machine_type = 'washer' ORDER BY a.started_at, a.id LIMIT 1),
+    washing_started_by = (SELECT a.user_id FROM machine_assignments a WHERE a.order_id = orders.id AND a.machine_type = 'washer' ORDER BY a.started_at, a.id LIMIT 1),
+    drying_started_at = (SELECT a.started_at FROM machine_assignments a WHERE a.order_id = orders.id AND a.machine_type = 'dryer' ORDER BY a.started_at, a.id LIMIT 1),
+    drying_started_by = (SELECT a.user_id FROM machine_assignments a WHERE a.order_id = orders.id AND a.machine_type = 'dryer' ORDER BY a.started_at, a.id LIMIT 1);
+  UPDATE orders SET washing_completed_at =
+    (SELECT MAX(a.ended_at) FROM machine_assignments a WHERE a.order_id = orders.id AND a.machine_type = 'washer')
+  WHERE washing_started_at IS NOT NULL AND status IN ('washing','drying','ready','released') AND NOT EXISTS
+    (SELECT 1 FROM machine_assignments a WHERE a.order_id = orders.id AND a.machine_type = 'washer' AND a.ended_at IS NULL);
+  UPDATE orders SET drying_completed_at =
+    (SELECT MAX(a.ended_at) FROM machine_assignments a WHERE a.order_id = orders.id AND a.machine_type = 'dryer')
+  WHERE drying_started_at IS NOT NULL AND status IN ('ready','released') AND NOT EXISTS
+    (SELECT 1 FROM machine_assignments a WHERE a.order_id = orders.id AND a.machine_type = 'dryer' AND a.ended_at IS NULL);
+  `,
+  // Machine queues. Who tapped Washing Done / Drying Done, next to who started each stage (unknown for older orders).
+  // The washing and drying queues are not stored: an order is queued exactly while it waits for a machine (Received with
+  // no washer; washing finished with no dryer), ordered by when it became ready (received_at / washing_completed_at).
+  // Deriving them means an order can never be queued twice or left queued after it moves on or is cancelled.
+  `
+  ALTER TABLE orders ADD COLUMN washing_completed_by INTEGER REFERENCES users(id) ON DELETE SET NULL;
+  ALTER TABLE orders ADD COLUMN drying_completed_by INTEGER REFERENCES users(id) ON DELETE SET NULL;
+  CREATE INDEX idx_orders_washed ON orders(washing_completed_at);
+  `,
+  // Machine and stage tracking retired: staff run the washers, dryers and folding by hand, and the app keeps only the
+  // overall status Received → Processing → Ready for Pickup → Completed (or Cancelled). Processing is stored as
+  // 'washing': the orders.status CHECK constraint predates it, and rebuilding the orders table on customer devices
+  // (foreign keys on, cascading order_items) isn't worth the risk. Orders in Drying join Processing.
+  // processing_at/by and ready_at/by record when each step was tapped and by whom, backfilled from the old stage times.
+  // machines, machine_assignments and the washing_* / drying_* columns are no longer read or written; they stay so
+  // older rows and backups keep loading. Any machine still marked In Use is released.
+  `
+  ALTER TABLE orders ADD COLUMN processing_at TEXT;
+  ALTER TABLE orders ADD COLUMN processing_by INTEGER REFERENCES users(id) ON DELETE SET NULL;
+  ALTER TABLE orders ADD COLUMN ready_at TEXT;
+  ALTER TABLE orders ADD COLUMN ready_by INTEGER REFERENCES users(id) ON DELETE SET NULL;
+
+  UPDATE orders SET
+    processing_at = COALESCE(washing_started_at, drying_started_at),
+    processing_by = COALESCE(washing_started_by, drying_started_by);
+  UPDATE orders SET
+    ready_at = COALESCE(drying_completed_at, washing_completed_at),
+    ready_by = COALESCE(drying_completed_by, washing_completed_by)
+  WHERE status IN ('ready','released');
+  UPDATE orders SET status = 'washing', updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE status = 'drying';
+
+  UPDATE machine_assignments SET ended_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'), end_reason = 'status' WHERE ended_at IS NULL;
+  `,
+  // My Account profile photo: a path in the app's private data folder (lib/avatarPhoto.ts), never the image itself.
+  // NULL = no photo; the avatar shows initials.
+  `
+  ALTER TABLE users ADD COLUMN photo TEXT;
+  `,
 ]

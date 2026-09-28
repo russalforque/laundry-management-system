@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import appLogo from '../assets/app-logo.png'
 import { useBranding } from '../context/BrandingContext'
 import { brandName } from '../lib/branding'
+import { useMedia, useWide } from '../hooks/useScreen'
 import { I, Icon } from './Icons'
 
 export const primaryAction =
@@ -14,6 +15,23 @@ export const secondaryAction =
  * a phone-sized card on tablets. `decor` adds the soft circle seen behind the splash.
  */
 export function AuthScreen({ children, decor }: { children: ReactNode; decor?: boolean }) {
+  // Landscape tablets / desktops: brand panel beside the screen, sized to the viewport so nothing is cut off.
+  // The splash (decor) keeps the single card: it's up for a moment and already shows the brand.
+  const wide = useWide()
+  const landscape = useMedia('(orientation: landscape)')
+  const split = wide && landscape && !decor
+  if (split) {
+    return (
+      <div className="flex h-dvh overflow-hidden bg-blue-50">
+        <BrandPanel />
+        <div className="flex min-w-0 flex-1 items-center justify-center p-6">
+          <main className="relative isolate flex h-full max-h-190 w-full max-w-md flex-col overflow-y-auto overflow-x-hidden rounded-4xl bg-white px-8 pb-6 pt-[max(env(safe-area-inset-top),0.75rem)] shadow-xl shadow-blue-900/10">
+            {children}
+          </main>
+        </div>
+      </div>
+    )
+  }
   return (
     <div className="flex min-h-dvh justify-center bg-white sm:items-center sm:bg-blue-50 sm:p-6">
       <main className="relative isolate flex min-h-dvh w-full flex-col overflow-hidden bg-white px-6 pb-[max(env(safe-area-inset-bottom),1.5rem)] pt-[max(env(safe-area-inset-top),0.75rem)] sm:min-h-[760px] sm:max-w-md sm:rounded-4xl sm:px-8 sm:shadow-xl sm:shadow-blue-900/10">
@@ -26,6 +44,52 @@ export function AuthScreen({ children, decor }: { children: ReactNode; decor?: b
         {children}
       </main>
     </div>
+  )
+}
+
+/** What the app does, in three lines, for the brand panel. */
+const FEATURES: { icon: ReactNode; title: string; text: string }[] = [
+  { icon: I.orders, title: 'Orders & payments', text: 'Take orders, collect Pay Now or Pay Later, print receipts.' },
+  { icon: I.basket, title: 'Simple workflow', text: 'Received, Processing, Ready for Pickup, Completed.' },
+  { icon: I.chart, title: 'Reports & store shift', text: 'Daily sales, balances due and drawer counts.' },
+]
+
+/**
+ * Left half of the landscape sign-in screens: business logo and name on the brand color (Settings › Branding),
+ * with a short reminder of what the app does.
+ */
+function BrandPanel() {
+  const { brand } = useBranding()
+  const name = brandName(brand)
+  const cut = name.lastIndexOf(' ')
+  return (
+    <aside aria-hidden className="relative hidden w-[42%] max-w-xl shrink-0 flex-col justify-between overflow-hidden bg-blue-600 px-10 pb-10 pt-[max(env(safe-area-inset-top),2.5rem)] text-white md:flex">
+      <div className="pointer-events-none absolute -right-24 -top-24 size-80 rounded-full bg-white/10" />
+      <div className="pointer-events-none absolute -bottom-32 -left-20 size-96 rounded-full bg-white/5" />
+      <div className="relative flex items-center gap-4">
+        <span className="grid size-18 shrink-0 place-items-center rounded-3xl bg-white shadow-lg shadow-blue-900/20"><LogoTile size="sm" /></span>
+        <span className="min-w-0">
+          <span className="block truncate text-3xl font-bold leading-tight tracking-tight">
+            {cut < 0 ? name : <>{name.slice(0, cut)} <span className="text-blue-100">{name.slice(cut + 1)}</span></>}
+          </span>
+          <span className="block text-sm text-blue-100">Laundry Management System</span>
+        </span>
+      </div>
+      <ul className="relative space-y-5">
+        {FEATURES.map((f) => (
+          <li key={f.title} className="flex items-start gap-4">
+            <span className="grid size-11 shrink-0 place-items-center rounded-2xl bg-white/15"><Icon className="h-6 w-6">{f.icon}</Icon></span>
+            <span className="min-w-0">
+              <span className="block font-semibold">{f.title}</span>
+              <span className="block text-sm leading-snug text-blue-100">{f.text}</span>
+            </span>
+          </li>
+        ))}
+      </ul>
+      <p className="relative flex items-center gap-2 text-sm text-blue-100">
+        <Icon className="h-4 w-4 shrink-0">{I.shield}</Icon>Works offline. All data stays on this device.
+      </p>
+    </aside>
   )
 }
 

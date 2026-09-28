@@ -7,8 +7,8 @@ android {
         applicationId "com.sellix.laundry"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode 4
+        versionName "1.3"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,7 +16,7 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
-    // Release signing key: android/keystore.properties (not in git). Back it up — updates must use the same key.
+    // Release signing key: android/keystore.properties (not in git). Back it up - updates must use the same key.
     def keystorePropsFile = rootProject.file('keystore.properties')
     signingConfigs {
         release {

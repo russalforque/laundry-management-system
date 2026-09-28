@@ -1,11 +1,13 @@
 import { paymentStatus } from '../lib/orders'
-import { requirePermission, sessionCan } from '../lib/permissions'
+import { requireAdminApproval, requirePermission, sessionCan } from '../lib/permissions'
 import type { OrderStatus, PaymentMethod } from '../types'
 import { query, transaction } from './client'
 import { ORDER_CUSTOMER_NAME } from './customers'
 import { OPEN_SHIFT_ID, requireOpenStore } from './shifts'
 
-const METHODS: PaymentMethod[] = ['cash', 'gcash', 'other']
+export const METHODS: PaymentMethod[] = ['cash', 'gcash', 'other']
+/** Longest payment reference / refund reason. */
+export const MAX_NOTE = 500
 
 export interface PaymentInput {
   orderId: number
@@ -35,6 +37,7 @@ export async function addPayment(input: PaymentInput): Promise<number> {
   return transaction(async (tx) => {
     if (!Number.isInteger(input.amountCents) || input.amountCents <= 0) throw new Error('Enter a payment amount above zero.')
     if (!METHODS.includes(input.method)) throw new Error('Invalid payment method.')
+    if (input.reference.length > MAX_NOTE) throw new Error('The reference is too long (500 characters max).')
     const [order] = await tx.query<{ total_cents: number; status: OrderStatus }>(
       'SELECT total_cents, status FROM orders WHERE id = ?',
       [input.orderId],
@@ -80,9 +83,12 @@ export interface RefundInput {
  */
 export async function refundOrder(input: RefundInput): Promise<number> {
   const userId = requirePermission('payments.collect').id
+  if (!Number.isInteger(input.amountCents) || input.amountCents <= 0) throw new Error('Enter a refund amount above zero.')
+  if (!METHODS.includes(input.method)) throw new Error('Invalid refund method.')
+  if (!input.reason.trim()) throw new Error('Enter a reason for the refund.')
+  if (input.reason.length > MAX_NOTE) throw new Error('The reason is too long (500 characters max).')
+  requireAdminApproval(`refund:${input.orderId}`)
   return transaction(async (tx) => {
-    if (!Number.isInteger(input.amountCents) || input.amountCents <= 0) throw new Error('Enter a refund amount above zero.')
-    if (!METHODS.includes(input.method)) throw new Error('Invalid refund method.')
     await requireOpenStore(tx, 'giving refunds')
     const [order] = await tx.query<{ status: OrderStatus }>('SELECT status FROM orders WHERE id = ?', [input.orderId])
     if (!order) throw new Error('Order not found.')

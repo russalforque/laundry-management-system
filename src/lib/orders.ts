@@ -33,15 +33,20 @@ export function normalizeQuantity(method: PricingMethod, value: number): number 
   return kg > 0 ? kg : null // e.g. 0.001 kg rounds to 0
 }
 
-import type { OrderStatus } from '../types'
+import type { OrderRow, OrderStatus } from '../types'
 
-/** New Order → Received → Washing → Drying → Ready for Pickup → Completed ('released'). */
-export const STATUS_FLOW: OrderStatus[] = ['received', 'washing', 'drying', 'ready', 'released']
+/**
+ * Processing: the laundry is being washed, dried and folded. Staff run the machines and folding by hand, so the app
+ * doesn't track which. Stored as 'washing' (see OrderStatus); use this constant, never the literal.
+ */
+export const PROCESSING = 'washing' as const satisfies OrderStatus
+
+/** Received → Processing → Ready for Pickup → Completed ('released'). Cancelled can happen from any open status. */
+export const STATUS_FLOW: OrderStatus[] = ['received', PROCESSING, 'ready', 'released']
 
 export const STATUS_LABEL: Record<OrderStatus, string> = {
   received: 'Received',
-  washing: 'Washing',
-  drying: 'Drying',
+  [PROCESSING]: 'Processing',
   ready: 'Ready for Pickup',
   released: 'Completed',
   cancelled: 'Cancelled',
@@ -49,14 +54,27 @@ export const STATUS_LABEL: Record<OrderStatus, string> = {
 
 export const isFinal = (s: OrderStatus) => s === 'released' || s === 'cancelled'
 
-/**
- * Every allowed workflow move. Received → Washing and Washing → Drying happen only by putting the
- * order in a machine (db/machines.ts); Washing → Ready skips drying. Any open order can be cancelled.
- */
+/** What the Orders list says to do next with an order: an action to take, or nothing (final). */
+export interface NextAction {
+  label: string
+  kind: 'act' | 'done' | 'none'
+}
+
+/** The one next step for a list row. Mirrors the order's Next Step (components/order/NextStepCard.tsx), which has the buttons. */
+export function nextAction(o: Pick<OrderRow, 'status' | 'balance_cents'>): NextAction {
+  switch (o.status) {
+    case 'received': return { label: 'Start Processing', kind: 'act' }
+    case PROCESSING: return { label: 'Mark Ready for Pickup', kind: 'act' }
+    case 'ready': return { label: o.balance_cents > 0 ? 'Collect balance · Hand over' : 'Hand over', kind: 'act' }
+    case 'released': return { label: 'Completed', kind: 'done' }
+    default: return { label: 'Cancelled', kind: 'none' }
+  }
+}
+
+/** Every allowed workflow move, one step forward at a time. Any open order can be cancelled. */
 const TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
-  received: ['washing', 'cancelled'],
-  washing: ['drying', 'ready', 'cancelled'],
-  drying: ['ready', 'cancelled'],
+  received: [PROCESSING, 'cancelled'],
+  [PROCESSING]: ['ready', 'cancelled'],
   ready: ['released', 'cancelled'],
   released: [],
   cancelled: [],

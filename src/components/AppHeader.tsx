@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { ROLE_LABEL } from '../db/users'
 import { BrandName, LogoTile } from './AuthScreen'
+import { Avatar } from './Avatar'
 import { I, Icon } from './Icons'
 
 /** Round white icon button used in the header (account, notifications). */
@@ -27,7 +28,9 @@ export function AppHeader({ actions }: { actions?: ReactNode }) {
       {actions}
       <div className="relative">
         <button onClick={() => setMenu((m) => !m)} aria-label="Account menu" aria-expanded={menu} className={headerBtn}>
-          <Icon className="h-6 w-6">{I.user}</Icon>
+          {user?.photo
+            ? <Avatar name={user.full_name} photo={user.photo} tone="bg-white text-slate-800" className="size-12 text-sm" />
+            : <Icon className="h-6 w-6">{I.user}</Icon>}
         </button>
         {menu && (
           <>

@@ -5,7 +5,7 @@ import { parseMaxKg, priceCart, typeOf, type CartItem, type PricedLine } from '.
 import type { Inclusion, OrderItemRow, OrderStatus, PaymentMethod, Service } from '../types'
 import { transaction, type Tx } from './client'
 import { WALK_IN_CODE } from './customers'
-import { checkTendered } from './payments'
+import { checkTendered, MAX_NOTE, METHODS } from './payments'
 import { OPEN_SHIFT_ID, requireOpenStore } from './shifts'
 
 export interface NewOrderInput {
@@ -35,7 +35,7 @@ async function insertItems(tx: Tx, orderId: number, lines: PricedLine[]) {
 const TAG_PREFIX = 'L-'
 
 /**
- * Creates order, items and the optional first payment atomically.
+ * Creates order, items and the optional first payment atomically. The order starts as Received.
  * Prices are read from the database here, never trusted from the UI. created_by is the signed-in employee, never passed in.
  */
 export async function createOrder(input: NewOrderInput): Promise<{ id: number; orderNumber: string }> {
@@ -43,6 +43,9 @@ export async function createOrder(input: NewOrderInput): Promise<{ id: number; o
   if (!input.items.length) throw new Error('Add at least one service.')
   if (!Number.isInteger(input.discountCents) || input.discountCents < 0) throw new Error('Invalid discount.')
   if (input.expectedPickup !== null && !/^\d{4}-\d{2}-\d{2}( \d{2}:\d{2})?$/.test(input.expectedPickup)) throw new Error('Invalid pickup date.')
+  if (input.notes.length > 1000) throw new Error('Notes are too long (1,000 characters max).')
+  if (input.payment && !METHODS.includes(input.payment.method)) throw new Error('Invalid payment method.')
+  if (input.payment && input.payment.reference.length > MAX_NOTE) throw new Error('The reference is too long (500 characters max).')
 
   return transaction(async (tx) => {
     const [customer] = await tx.query<{ customer_code: string }>('SELECT customer_code FROM customers WHERE id = ?', [input.customerId])

@@ -223,23 +223,28 @@ export function ItemSheet({ line, onSave, onClose }: { line: OrderItemRow; onSav
   )
 }
 
-/** Add More: pick an active service or package, then its quantity. One already on the order is edited instead. */
-export function AddServiceSheet({ services, items, onSave, onClose }: {
+/**
+ * Add a service: pick an active service or package (or, with `addons`, an add-on), then its quantity.
+ * One already on the order is edited instead.
+ */
+export function AddServiceSheet({ services, items, addons = false, onSave, onClose }: {
   services: Service[] | null
+  addons?: boolean
   items: OrderItemRow[]
   onSave: (s: Service, qty: number) => Promise<unknown>
   onClose: () => void
 }) {
   const [picked, setPicked] = useState<Service | null>(null)
-  const list = services?.filter((s) => !s.is_addon) ?? []
+  const list = services?.filter((s) => !!s.is_addon === addons) ?? []
+  const noun = addons ? 'add-on' : 'service'
   const lineOf = (s: Service) => items.find((i) => i.service_id === s.id)
 
   if (picked) {
     const line = lineOf(picked)
     return (
-      <Sheet label={line ? 'Edit service' : 'Add service'} onClose={onClose}>
+      <Sheet label={`${line ? 'Edit' : 'Add'} ${noun}`} onClose={onClose}>
         <button type="button" onClick={() => setPicked(null)} className="-mt-1 mb-3 inline-flex min-h-11 items-center gap-1.5 rounded-xl text-sm font-semibold text-blue-600">
-          <Icon className="h-4 w-4">{I.back}</Icon>All services
+          <Icon className="h-4 w-4">{I.back}</Icon>{addons ? 'All add-ons' : 'All services'}
         </button>
         <QuantityForm
           name={line?.service_name ?? picked.name}
@@ -255,11 +260,11 @@ export function AddServiceSheet({ services, items, onSave, onClose }: {
   }
 
   return (
-    <Sheet label="Add service" onClose={onClose}>
+    <Sheet label={`Add ${noun}`} onClose={onClose}>
       {services === null ? (
         <div className="space-y-2.5">{[0, 1, 2].map((i) => <div key={i} className="h-18 animate-pulse rounded-2xl bg-slate-100" />)}</div>
       ) : list.length === 0 ? (
-        <p className="py-6 text-center text-sm text-slate-500">No active services. An admin can add them on the Services page.</p>
+        <p className="py-6 text-center text-sm text-slate-500">{addons ? 'No add-ons are set up.' : 'No active services.'} An admin can add them on the Services page.</p>
       ) : (
         <ul className="space-y-2.5">
           {list.map((s) => {

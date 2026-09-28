@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { verifyAdminPin } from '../db/users'
+import { grantAdminApproval } from '../lib/permissions'
 import { PinPad } from './PinPad'
 import { Sheet } from './Sheet'
 
@@ -29,7 +30,7 @@ export function useAdminPin() {
     <Sheet label="Admin approval" onClose={() => close(false)}>
       <p className="px-1 pb-6 text-[15px] text-blue-900/70">{req.reason}</p>
       <div className="pb-2">
-        <PinPad hint="Enter an admin PIN to continue" onSubmit={async (pin) => { await verifyAdminPin(pin); close(true) }} />
+        <PinPad hint="Enter an admin PIN to continue" onSubmit={async (pin) => { await verifyAdminPin(pin); grantAdminApproval(); close(true) }} />
       </div>
     </Sheet>
   )

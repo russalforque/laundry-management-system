@@ -15,6 +15,8 @@ interface AuthValue {
   pickUser: boolean
   /** Whether the signed-in employee has this permission (lib/permissions.ts). */
   can: (p: Permission) => boolean
+  /** After a My Account edit: the same employee as now stored (name, username, photo). */
+  refreshUser: (u: User) => void
 }
 
 const AuthContext = createContext<AuthValue | null>(null)
@@ -39,6 +41,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     switchUser: () => { setPickUser(true); signOut() },
     pickUser,
     can: (p) => hasPermission(user?.role, p),
+    refreshUser: (u) => { if (u.id === user?.id) { setSessionUser(u); setUser(u) } },
   }
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }

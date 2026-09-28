@@ -63,9 +63,37 @@ async function persist() {
   if (isWeb) await sqlite.saveToStore(DB_NAME)
 }
 
+const DB_MESSAGE = {
+  unique: 'This record already exists.',
+  foreign_key: 'This record is linked to other records, so it can’t be changed or removed.',
+  check: 'Some of the values entered are not valid. Please check them and try again.',
+  other: 'The app could not read or save its data. Please try again.',
+} as const
+
+/** A SQLite failure reworded for staff (no SQL or plugin text on screen); `original` is kept and logged for support. */
+export class DbError extends Error {
+  constructor(public kind: keyof typeof DB_MESSAGE, public original: unknown) {
+    super(DB_MESSAGE[kind])
+  }
+}
+
+function dbError(e: unknown): DbError {
+  console.error('Database error', e)
+  const m = e instanceof Error ? e.message : String(e)
+  return new DbError(/UNIQUE/i.test(m) ? 'unique' : /FOREIGN KEY/i.test(m) ? 'foreign_key' : /CHECK constraint|NOT NULL/i.test(m) ? 'check' : 'other', e)
+}
+
+async function safe<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn()
+  } catch (e) {
+    throw dbError(e)
+  }
+}
+
 export async function query<T = Record<string, unknown>>(sql: string, params: unknown[] = []): Promise<T[]> {
   const conn = await initDb()
-  return ((await conn.query(sql, params as never[])).values ?? []) as T[]
+  return ((await safe(() => conn.query(sql, params as never[]))).values ?? []) as T[]
 }
 
 export async function queryOne<T = Record<string, unknown>>(sql: string, params: unknown[] = []): Promise<T | undefined> {
@@ -74,7 +102,7 @@ export async function queryOne<T = Record<string, unknown>>(sql: string, params:
 
 export async function run(sql: string, params: unknown[] = []) {
   const conn = await initDb()
-  const res = await conn.run(sql, params as never[], true)
+  const res = await safe(() => conn.run(sql, params as never[], true))
   await persist()
   return { lastId: res.changes?.lastId ?? 0, changes: res.changes?.changes ?? 0 }
 }
@@ -86,9 +114,9 @@ export function transaction<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
     await conn.beginTransaction()
     try {
       const tx: Tx = {
-        query: async (sql, params = []) => ((await conn.query(sql, params as never[])).values ?? []) as never,
+        query: async (sql, params = []) => ((await safe(() => conn.query(sql, params as never[]))).values ?? []) as never,
         run: async (sql, params = []) => {
-          const res = await conn.run(sql, params as never[], false)
+          const res = await safe(() => conn.run(sql, params as never[], false))
           return { lastId: res.changes?.lastId ?? 0, changes: res.changes?.changes ?? 0 }
         },
       }

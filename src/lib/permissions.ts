@@ -9,8 +9,6 @@ export type Permission =
   | 'payments.collect' // collect balances (Pay Later / partial)
   | 'payments.viewAll' // every employee's payment history (otherwise own only)
   | 'customers.manage'
-  | 'machines.operate' // put orders in / take them out of machines
-  | 'machines.configure' // add, edit, delete machines
   | 'printer.use' // connect/pair the receipt printer, test print
   | 'cashDrawer.open' // open the drawer by hand without an admin PIN
   | 'dashboard.financials' // sales and collections on the dashboard
@@ -23,7 +21,7 @@ export type Permission =
   | 'store.history' // past store shifts and their cash counts (admin)
 
 /** Daily laundry operations only. */
-const STAFF: Permission[] = ['orders.manage', 'payments.collect', 'customers.manage', 'machines.operate', 'printer.use', 'store.operate']
+const STAFF: Permission[] = ['orders.manage', 'payments.collect', 'customers.manage', 'printer.use', 'store.operate']
 
 export const ROLE_PERMISSIONS: Record<Role, readonly Permission[] | 'all'> = {
   admin: 'all',
@@ -45,7 +43,10 @@ export function hasPermission(role: Role | undefined, p: Permission) {
 let current: User | null = null
 
 /** Set by AuthContext at sign-in and sign-out. The db layer reads it, so the UI can't pass another employee's id. */
-export const setSessionUser = (u: User | null) => { current = u }
+export const setSessionUser = (u: User | null) => {
+  current = u
+  approval = null // an approval never carries over to the next employee
+}
 
 export const sessionCan = (p: Permission) => hasPermission(current?.role, p)
 
@@ -59,5 +60,31 @@ export function sessionUser(): User {
 export function requirePermission(...ps: Permission[]): User {
   const u = sessionUser()
   if (!ps.some((p) => hasPermission(u.role, p))) throw new Error('You do not have permission to do this.')
+  return u
+}
+
+// ---------- admin approval (admin PIN), enforced by the db layer ----------
+// Voids, refunds and customer deletes need an admin: an admin signed in, or an admin PIN entered just before
+// (components/AdminPin.tsx). Checked here, not only in the UI, so no screen can skip the PIN.
+
+const APPROVAL_MS = 2 * 60_000
+/** scope null = any one sensitive action; a scope (e.g. "refund:12") = that action only, until it expires. */
+let approval: { until: number; scope: string | null } | null = null
+
+/** Called once an admin PIN is verified. */
+export function grantAdminApproval(scope: string | null = null, ms = APPROVAL_MS) {
+  approval = { until: Date.now() + ms, scope }
+}
+
+/**
+ * Throws unless the signed-in employee is an admin or an admin PIN approved this action. A general approval is
+ * used up here; a scoped one lasts until it expires (so a refund can be retried after a typo).
+ */
+export function requireAdminApproval(scope: string): User {
+  const u = sessionUser()
+  if (u.role === 'admin') return u
+  const a = approval
+  if (!a || a.until < Date.now() || (a.scope !== null && a.scope !== scope)) throw new Error('An admin PIN is needed to do this.')
+  if (a.scope === null) approval = null
   return u
 }

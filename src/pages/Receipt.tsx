@@ -5,7 +5,7 @@ import { BackHeader, EmptyCard, primary } from '../components/Manage'
 import ThermalReceipt from '../components/ThermalReceipt'
 import { getOrderDetail, getPaymentReceipt } from '../db/orderQueries'
 import { getSettings } from '../db/settings'
-import { canBluetoothPrint, NoPrinterError, printOrderReceipt, printPaymentReceipt } from '../lib/printer'
+import { canBluetoothPrint, loadBasketTag, NoPrinterError, printBasketTag, printOrderReceipt, printPaymentReceipt } from '../lib/printer'
 import { logoBitmap, orderReceipt, PAPER, paymentReceipt, receiptConfig, type ReceiptDoc } from '../lib/receipt'
 
 type PrintState = { state: 'busy' | 'ok' | 'error'; msg?: string; noPrinter?: boolean } | null
@@ -16,11 +16,13 @@ const tornEdge = 'pb-[calc(2ch+6px)] [mask:conic-gradient(from_-45deg_at_bottom,
 /**
  * Standalone (no app chrome) so printing only ever outputs the receipt. Uses the same layout as the
  * Bluetooth printer, following Settings › Receipt (paper width, visible fields, logo, QR).
- * `?payment=<id>` shows the receipt for that one payment instead of the order receipt.
+ * `?payment=<id>` shows the receipt for that one payment instead of the order receipt; `?tag=1` the basket tag.
  */
 export default function Receipt() {
   const id = Number(useParams().id)
-  const paymentId = Number(useSearchParams()[0].get('payment')) || 0
+  const [params] = useSearchParams()
+  const paymentId = Number(params.get('payment')) || 0
+  const tag = params.get('tag') === '1'
   const navigate = useNavigate()
   const [doc, setDoc] = useState<ReceiptDoc | null | undefined>(undefined)
   const [printing, setPrinting] = useState<PrintState>(null)
@@ -28,15 +30,24 @@ export default function Receipt() {
   useEffect(() => {
     let live = true
     ;(async () => {
+      if (tag) {
+        const t = await loadBasketTag(id)
+        if (live) setDoc(t)
+        return
+      }
       const [detail, settings] = await Promise.all([paymentId ? getPaymentReceipt(id, paymentId) : getOrderDetail(id), getSettings()])
       const c = receiptConfig(settings)
       const logo = await logoBitmap(c.receipt_logo, c.receipt_paper).catch(() => null)
       if (!live) return
       if (!detail) return setDoc(null)
       setDoc('payment' in detail ? paymentReceipt(detail, c, logo) : orderReceipt(detail, c, logo))
-    })()
+    })().catch((e) => {
+      // Never leave the preview loading forever; show the not-found card instead.
+      console.error(e)
+      if (live) setDoc(null)
+    })
     return () => { live = false }
-  }, [id, paymentId])
+  }, [id, paymentId, tag])
 
   const back = () => navigate(`/orders/${id}`)
 
@@ -45,14 +56,14 @@ export default function Receipt() {
     if (!canBluetoothPrint()) return window.print()
     setPrinting({ state: 'busy' })
     try {
-      await (paymentId ? printPaymentReceipt(id, paymentId) : printOrderReceipt(id))
+      await (tag ? printBasketTag(id) : paymentId ? printPaymentReceipt(id, paymentId) : printOrderReceipt(id))
       setPrinting({ state: 'ok' })
     } catch (e) {
       setPrinting({ state: 'error', msg: e instanceof Error ? e.message : 'Could not print.', noPrinter: e instanceof NoPrinterError })
     }
   }
 
-  const title = paymentId ? 'Payment Receipt' : 'Receipt'
+  const title = tag ? 'Basket Tag' : paymentId ? 'Payment Receipt' : 'Receipt'
   const paper = doc && doc.cols === PAPER['80'].cols ? '80 mm' : '58 mm'
   const busy = printing?.state === 'busy'
 
@@ -70,7 +81,7 @@ export default function Receipt() {
           <div className="mt-5 rounded-2xl bg-white">
             <EmptyCard
               icon={I.receipt}
-              title={paymentId ? 'Payment not found' : 'Order not found'}
+              title={paymentId && !tag ? 'Payment not found' : 'Order not found'}
               text="It may have been deleted. Go back to the order to try again."
             />
           </div>
@@ -91,14 +102,14 @@ export default function Receipt() {
               >
                 <Icon className="mt-0.5 h-4 w-4 shrink-0">{printing.state === 'ok' ? I.check : I.info}</Icon>
                 <span className="min-w-0">
-                  {printing.state === 'ok' ? 'Receipt printed.' : printing.msg}
+                  {printing.state === 'ok' ? `${title} printed.` : printing.msg}
                   {printing.noPrinter && <Link to="/printer" className="mt-1 block font-semibold underline">Set up printer</Link>}
                 </span>
               </p>
             )}
             <button type="button" onClick={print} disabled={busy} className={`${primary} min-h-13 w-full rounded-2xl text-base`}>
               <Icon className="h-5 w-5">{I.printer}</Icon>
-              {busy ? 'Printing…' : printing?.state === 'ok' ? 'Print Again' : 'Print Receipt'}
+              {busy ? 'Printing…' : printing?.state === 'ok' ? 'Print Again' : `Print ${title}`}
             </button>
           </div>
         </footer>

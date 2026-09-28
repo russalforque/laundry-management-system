@@ -1,7 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { HashRouter, Navigate, Route, Routes } from 'react-router-dom'
-import Layout from './components/Layout'
-import { MachineAlerts } from './components/MachineAlerts'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { BrandingProvider, useBranding } from './context/BrandingContext'
 import { runAutoBackupIfDue } from './db/backup'
@@ -9,43 +7,19 @@ import { initDb } from './db/client'
 import { getSettings, setSetting } from './db/settings'
 import { isSetupPending, seedAdminIfEmpty } from './db/users'
 import { brandingFrom } from './lib/branding'
-import { autoConnectPrinter } from './lib/printer'
-import { NAV } from './nav'
-import Account from './pages/Account'
-import Dashboard from './pages/Dashboard'
-import CustomerDetail from './pages/CustomerDetail'
-import Customers from './pages/Customers'
-import Login from './pages/Login'
-import Machines from './pages/Machines'
-import NewOrder from './pages/NewOrder'
-import OrderDetail from './pages/OrderDetail'
-import Orders from './pages/Orders'
-import Payments from './pages/Payments'
-import Placeholder from './pages/Placeholder'
-import Printer from './pages/Printer'
-import Reports from './pages/Reports'
-import Receipt from './pages/Receipt'
-import Settings from './pages/Settings'
-import Store from './pages/Store'
-import Services from './pages/Services'
-import Setup from './pages/Setup'
-import Users from './pages/Users'
-import { Intro, Splash } from './pages/Welcome'
 import type { Permission } from './lib/permissions'
-
-const pages: Record<string, ReactNode> = {
-  '/customers': <Customers />,
-  '/': <Dashboard />,
-  '/machines': <Machines />,
-  '/orders': <Orders />,
-  '/payments': <Payments />,
-  '/printer': <Printer />,
-  '/reports': <Reports />,
-  '/services': <Services />,
-  '/settings': <Settings />,
-  '/store': <Store />,
-  '/users': <Users />,
-}
+import { clearRetiredMachineAlerts } from './lib/machineAlerts'
+import { autoConnectPrinter } from './lib/printer'
+import AppShell from './layouts/AppShell'
+import { NAV } from './nav'
+import Login from './pages/Login'
+import Placeholder from './pages/Placeholder'
+import Receipt from './pages/Receipt'
+import Setup from './pages/Setup'
+import { Intro, Splash } from './pages/Welcome'
+import NewOrderSession from './routes/NewOrderSession'
+import { ACCOUNT, CHANGE_PIN, CUSTOMER_DETAILS, NAV_PAGES, ORDER_DETAILS } from './routes/pages'
+import { ScreenSwitch } from './routes/ScreenSwitch'
 
 /** Route-level check; the db layer enforces the same permissions again (lib/permissions.ts). */
 function Guard({ perm, children }: { perm?: Permission; children: ReactNode }) {
@@ -62,9 +36,11 @@ function Gate({ boot, onBoot }: { boot: Boot; onBoot: (b: Boot) => void }) {
   const { user, pickUser } = useAuth()
   const [preselectId, setPreselectId] = useState<number | null>(null)
   // Keep the receipt printer connected while someone is signed in: at login and each time the app returns to the foreground.
+  // Also clears any notifications left scheduled by the retired machine timers (once per run).
   useEffect(() => {
     if (!user) return
     autoConnectPrinter()
+    clearRetiredMachineAlerts()
     const onVisible = () => { if (document.visibilityState === 'visible') autoConnectPrinter() }
     document.addEventListener('visibilitychange', onVisible)
     return () => document.removeEventListener('visibilitychange', onVisible)
@@ -78,21 +54,22 @@ function Gate({ boot, onBoot }: { boot: Boot; onBoot: (b: Boot) => void }) {
   }
   return (
     <HashRouter>
-      <MachineAlerts />
       <Routes>
         <Route path="/orders/:id/receipt" element={<Guard perm="orders.manage"><Receipt /></Guard>} />
-        <Route element={<Layout />}>
+        {/* Phone: tab bar chrome and pages/mobile. Tablet / desktop: sidebar chrome and pages/desktop-tablet. */}
+        <Route element={<AppShell />}>
           {NAV.map((n) => (
             <Route
               key={n.to}
               path={n.to}
-              element={<Guard perm={n.perm}>{pages[n.to] ?? <Placeholder title={n.label} />}</Guard>}
+              element={<Guard perm={n.perm}>{NAV_PAGES[n.to] ? <ScreenSwitch {...NAV_PAGES[n.to]!} /> : <Placeholder title={n.label} />}</Guard>}
             />
           ))}
-          <Route path="/orders/new" element={<Guard perm="orders.manage"><NewOrder /></Guard>} />
-          <Route path="/orders/:id" element={<Guard perm="orders.manage"><OrderDetail /></Guard>} />
-          <Route path="/customers/:id" element={<Guard perm="customers.manage"><CustomerDetail /></Guard>} />
-          <Route path="/account" element={<Account />} />
+          <Route path="/orders/new" element={<Guard perm="orders.manage"><NewOrderSession /></Guard>} />
+          <Route path="/orders/:id" element={<Guard perm="orders.manage"><ScreenSwitch {...ORDER_DETAILS} /></Guard>} />
+          <Route path="/customers/:id" element={<Guard perm="customers.manage"><ScreenSwitch {...CUSTOMER_DETAILS} /></Guard>} />
+          <Route path="/account" element={<ScreenSwitch {...ACCOUNT} />} />
+          <Route path="/account/pin" element={<ScreenSwitch {...CHANGE_PIN} />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>

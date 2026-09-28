@@ -175,7 +175,7 @@ function ProfileRow({ profile: p, last, onPick }: { profile: Profile; last: bool
           last ? 'border-blue-200 ring-1 ring-blue-100' : 'border-slate-200/80'
         }`}
       >
-        <Avatar name={p.full_name} tone={last ? 'bg-blue-600 text-white' : TONE} className="size-12 text-base" />
+        <Avatar name={p.full_name} photo={p.photo} tone={last ? 'bg-blue-600 text-white' : TONE} className="size-12 text-base" />
         <span className="min-w-0 flex-1">
           <span className="block truncate text-base font-semibold text-slate-900">{p.full_name}</span>
           <span className="mt-0.5 flex items-center gap-2 text-[13px] text-slate-500">

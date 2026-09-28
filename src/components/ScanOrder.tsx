@@ -1,6 +1,6 @@
 import { BarcodeFormat, BarcodeScanner } from '@capacitor-mlkit/barcode-scanning'
 import { Capacitor, type PluginListenerHandle } from '@capacitor/core'
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
@@ -26,15 +26,14 @@ const queued = (fn: () => Promise<void>) => (cameraQueue = cameraQueue.then(fn, 
  * Scan QR button: opens the camera, reads a receipt's order QR code and opens that order's
  * Order Details / Pickup screen. Only for employees who can manage orders.
  */
-export function ScanQrButton({ className, label = 'Scan QR', iconOnly }: { className: string; label?: string; iconOnly?: boolean }) {
+export function ScanQrButton({ className, label = 'Scan QR', iconOnly, children }: { className: string; label?: string; iconOnly?: boolean; children?: ReactNode }) {
   const { can } = useAuth()
   const [open, setOpen] = useState(false)
   if (!can('orders.manage')) return null
   return (
     <>
       <button type="button" onClick={() => setOpen(true)} aria-label={iconOnly ? 'Scan order QR code' : undefined} className={className}>
-        <Icon className="h-5 w-5">{I.scan}</Icon>
-        {!iconOnly && label}
+        {children ?? <><Icon className="h-5 w-5">{I.scan}</Icon>{!iconOnly && label}</>}
       </button>
       {open && <OrderScanner onClose={() => setOpen(false)} />}
     </>

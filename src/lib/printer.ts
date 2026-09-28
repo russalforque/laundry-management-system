@@ -1,9 +1,10 @@
 import { Capacitor, registerPlugin } from '@capacitor/core'
 import { getOrderDetail, getPaymentReceipt } from '../db/orderQueries'
 import { getSettings, setSetting } from '../db/settings'
+import { listServices } from '../db/services'
 import { getShiftDetail } from '../db/shifts'
 import type { PaymentStatus } from '../types'
-import { encodeEscPos, logoBitmap, orderReceipt, paymentReceipt, receiptConfig, sampleOrder, shiftReport, testPage, type ReceiptConfig } from './receipt'
+import { basketTag, encodeEscPos, logoBitmap, orderReceipt, paymentReceipt, receiptConfig, sampleOrder, shiftReport, testPage, type ReceiptConfig } from './receipt'
 
 /**
  * Native side: android/app/src/main/java/com/sellix/laundry/ThermalPrinterPlugin.java
@@ -103,6 +104,20 @@ export async function printOrderReceipt(orderId: number) {
   if (!detail) throw new Error('Order not found.')
   const c = receiptConfig(settings)
   await send(encodeEscPos(orderReceipt(detail, c, await safeLogo(c))))
+}
+
+/** The order's basket tag (see basketTag); null when the order doesn't exist. Add-ons are told apart by their service. */
+export async function loadBasketTag(orderId: number) {
+  const [detail, settings, services] = await Promise.all([getOrderDetail(orderId), getSettings(), listServices()])
+  if (!detail) return null
+  return basketTag(detail, receiptConfig(settings), new Set(services.filter((s) => s.is_addon).map((s) => s.id)))
+}
+
+/** Basket tag for the laundry basket (Order Details); the customer receipt is untouched. */
+export async function printBasketTag(orderId: number) {
+  const doc = await loadBasketTag(orderId)
+  if (!doc) throw new Error('Order not found.')
+  await send(encodeEscPos(doc))
 }
 
 /** Store shift summary (Store Shift screen, at closing or from the history). */

@@ -1,10 +1,11 @@
 import qrcode from 'qrcode-generator'
 import type { getOrderDetail, getPaymentReceipt } from '../db/orderQueries'
-import { itemQtyLine } from './pricing'
+import { itemQtyLine, qtyText, typeOf } from './pricing'
 import type { Settings } from '../db/settings'
 import type { getShiftDetail } from '../db/shifts'
-import type { PaymentStatus } from '../types'
+import type { OrderItemRow, PaymentStatus } from '../types'
 import { formatDateTime, formatPeso } from './money'
+import { formatNumber } from './number'
 import { METHOD_LABEL, NOT_PROOF_OF_PAYMENT, RECEIPT_PAY_LABEL, STATUS_LABEL } from './orders'
 
 /**
@@ -61,7 +62,8 @@ export type Line =
   | { kind: 'text'; text: string; bold?: boolean; big?: boolean }
   | { kind: 'image'; bitmap: Bitmap }
 
-export interface ReceiptDoc { cols: number; dots: number; lines: Line[] }
+/** `lineDots`: tighter line spacing in printer dots (Font A is 24 tall, the printer default is 30); unset = default. */
+export interface ReceiptDoc { cols: number; dots: number; lines: Line[]; lineDots?: number }
 
 /** The printer's built-in code page is ASCII-safe only; map common symbols and strip accents (ñ → n). */
 function ascii(s: string) {
@@ -351,6 +353,7 @@ export function sampleOrder(status: PaymentStatus): OrderReceiptData {
       created_by: 0, created_by_name: 'Maria Santos', released_at: null, released_by_name: null, received_at: now, expected_pickup: null,
       subtotal_cents: total, discount_cents: 0, total_cents: total, paid_cents: paid, balance_cents: total - paid, refunded_cents: 0,
       payment_status: status, status: 'received', notes: '',
+      processing_at: null, processing_by: null, processing_by_name: null, ready_at: null, ready_by: null, ready_by_name: null,
     },
     items: [
       { id: 1, service_id: 0, service_name: 'Wash + Dry + Fold', pricing_method: 'per_piece', pricing_type: 'per_load', unit_price_cents: 17500, quantity: 1, weight_kg: 7.5, included_qty: 0, note: 'Includes Wash, Dry, Fold + 1× Detergent, 1× Fabcon per load', amount_cents: 17500 },
@@ -363,6 +366,56 @@ export function sampleOrder(status: PaymentStatus): OrderReceiptData {
   }
 }
 
+// ── Basket tag ──────────────────────────────────────────────────────
+/**
+ * A few lines to drop in the laundry basket so staff know whose load it is while it's washed, dried and folded.
+ * Not a receipt: no logo, address, date, prices, payment or QR, and packed tight to save paper.
+ *   #L-0015 RHAZEL          big, bold (the name drops to its own line when both don't fit)
+ *   Wash/Dry/Fold - 5kg     one line per service
+ *   + Detergent, Fabcon     add-ons; left out when there are none
+ *   PROCESSING              order status; bold, big when it fits
+ */
+const TAG_LINE_DOTS = 26
+
+/** "Wash + Dry + Fold" / "Wash & Dry" / "Wash and Fold" → "Wash/Dry/Fold", "Wash/Dry", "Wash/Fold". */
+export const shortServiceName = (name: string) => name.replace(/\s*(?:\+|&|\band\b)\s*/gi, '/').replace(/\s+/g, ' ').trim()
+
+/** First name in capitals; a very short first word ("Ma.", "Jo") keeps the next word so it still identifies someone. */
+function tagName(full: string) {
+  const words = ascii(full).trim().split(/\s+/).filter(Boolean)
+  if (!words.length) return 'WALK-IN'
+  const name = words[0].replace(/\.$/, '').length <= 2 && words[1] ? `${words[0]} ${words[1]}` : words[0]
+  return name.toUpperCase()
+}
+
+/** "5kg", "14.5kg - 2 loads", "3 pcs"; nothing for flat-rate lines. */
+function tagQty(i: OrderItemRow) {
+  const t = typeOf(i)
+  if (i.weight_kg) return `${formatNumber(i.weight_kg)}kg${t === 'per_load' && i.quantity > 1 ? ` - ${qtyText(t, i.quantity)}` : ''}`
+  if (t === 'per_kg') return `${formatNumber(i.quantity)}kg`
+  return t === 'fixed' ? '' : qtyText(t, i.quantity)
+}
+
+
+/** `addonIds`: services marked as add-ons (detergent, fabcon…), printed together on one line. */
+export function basketTag({ order, items }: OrderReceiptData, c: ReceiptConfig, addonIds: ReadonlySet<number>): ReceiptDoc {
+  const r = new Layout(c.receipt_paper)
+  const half = r.cols / 2
+  const big = { bold: true, big: true }
+  const no = ascii(`#${order.order_number}`), name = tagName(order.customer_name).slice(0, r.cols)
+  if (no.length + 1 + name.length <= half) r.left(`${no} ${name}`, big)
+  else r.left(no, big).left(name, name.length <= half ? big : { bold: true })
+
+  const services = items.filter((i) => !addonIds.has(i.service_id))
+  const addons = items.filter((i) => addonIds.has(i.service_id))
+  for (const i of services) r.left([shortServiceName(i.service_name), tagQty(i)].filter(Boolean).join(' - '))
+  if (addons.length) r.left(`+ ${addons.map((i) => `${shortServiceName(i.service_name)}${i.quantity > 1 ? ` x${formatNumber(i.quantity)}` : ''}`).join(', ')}`)
+
+  const status = STATUS_LABEL[order.status].toUpperCase()
+  r.left(status, status.length <= half ? big : { bold: true })
+  return { ...r.doc(), lineDots: TAG_LINE_DOTS }
+}
+
 // ── ESC/POS ─────────────────────────────────────────────────────────
 const ESC = 0x1b
 const GS = 0x1d
@@ -371,6 +424,7 @@ const BAND = 128
 
 export function encodeEscPos(doc: ReceiptDoc, feed = 4): string {
   const b: number[] = [ESC, 0x40, ESC, 0x61, 0] // initialize, left align (all alignment is done with spaces)
+  if (doc.lineDots) b.push(ESC, 0x33, doc.lineDots) // line spacing
   for (const line of doc.lines) {
     if (line.kind === 'text') {
       b.push(ESC, 0x45, line.bold ? 1 : 0, GS, 0x21, line.big ? 0x11 : 0)
@@ -394,7 +448,9 @@ export function encodeEscPos(doc: ReceiptDoc, feed = 4): string {
         }
     }
   }
-  b.push(ESC, 0x45, 0, GS, 0x21, 0, ESC, 0x64, feed)
+  b.push(ESC, 0x45, 0, GS, 0x21, 0)
+  if (doc.lineDots) b.push(ESC, 0x32) // default spacing again, so the tear-off feed is the usual length
+  b.push(ESC, 0x64, feed)
   let s = ''
   for (const x of b) s += String.fromCharCode(x)
   return btoa(s)

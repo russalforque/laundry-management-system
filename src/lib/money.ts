@@ -11,6 +11,17 @@ export const formatPesoShort = (cents: number) => (cents % 100 ? formatPeso(cent
 export const formatDateTime = (iso: string) =>
   new Date(iso).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' })
 
+/** "2:30 PM". */
+export const formatTime = (iso: string) => new Date(iso).toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit' })
+
+/** Time alone for today, "Sep 20, 2:30 PM" otherwise (order history). */
+export const formatStamp = (iso: string) => {
+  const d = new Date(iso)
+  return d.toDateString() === new Date().toDateString()
+    ? formatTime(iso)
+    : d.toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+}
+
 /** Expected pickup is stored as local "YYYY-MM-DD" or "YYYY-MM-DD HH:MM" (not UTC); shows the time only when set. */
 export function formatPickup(value: string) {
   const [date, time] = value.split(' ')

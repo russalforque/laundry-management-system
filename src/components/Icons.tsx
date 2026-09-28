@@ -25,11 +25,15 @@ export const I = {
   note: <><path d="M14 3.5H7a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-10l-5-5Z" /><path d="M14 3.5v5h5" /></>,
   receipt: <><path d="M6 3.5h12v17l-2-1.3-2 1.3-2-1.3-2 1.3-2-1.3-2 1.3Z" /><path d="M9 8h6M9 11.5h6M9 15h3.5" /></>,
   wallet: <><rect x="3.5" y="6" width="17" height="13" rx="2.5" /><path d="M3.5 10h17M16 14.5h.01" /></>,
+  basket: <><path d="M3.5 9.5h17l-1.6 9a2 2 0 0 1-2 1.5H7.1a2 2 0 0 1-2-1.5Z" /><path d="m8 9.5 3-5M16 9.5l-3-5M9.5 13v3.5M14.5 13v3.5" /></>,
+  heat: <path d="M7.5 20c-2-2.5 2-5 0-7.5s0-5.5 0-8M12 20c-2-2.5 2-5 0-7.5s0-5.5 0-8M16.5 20c-2-2.5 2-5 0-7.5s0-5.5 0-8" />,
   bag: <><path d="M6 8h12l-1 12.5H7Z" /><path d="M9 8V6.5a3 3 0 0 1 6 0V8" /></>,
   phone: <path d="M5 4h3.5l1.5 4.5-2 1.25a11 11 0 0 0 6.25 6.25L15.5 14l4.5 1.5V19a1.5 1.5 0 0 1-1.5 1.5A15.5 15.5 0 0 1 3.5 5.5 1.5 1.5 0 0 1 5 4Z" />,
   pin: <><path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11Z" /><circle cx="12" cy="10" r="2.5" /></>,
   pencil: <><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16Z" /><path d="m13.5 6.5 4 4" /></>,
-  more: <path d="M5 12h.01M12 12h.01M19 12h.01" strokeWidth={3} />,
+  more: <path d="M12 5h.01M12 12h.01M12 19h.01" strokeWidth={3} />,
+  /** "More" tab in the bottom nav: four rounded squares. */
+  menu: <><rect x="4" y="4" width="6.5" height="6.5" rx="1.75" /><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.75" /><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.75" /><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.75" /></>,
   box: <><path d="m12 3 8 4.5v9L12 21l-8-4.5v-9Z" /><path d="m4 7.5 8 4.5 8-4.5M12 12v9" /></>,
   trash: <path d="M4.5 7h15M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" />,
   user: <><circle cx="12" cy="8.5" r="3.5" /><path d="M5 20a7 7 0 0 1 14 0" /></>,
@@ -70,6 +74,8 @@ export const I = {
   printer: <><path d="M7 8V3.5h10V8" /><rect x="3.5" y="8" width="17" height="8.5" rx="2" /><path d="M7 13.5h10v7H7Z" /></>,
   message: <><path d="M5.5 4.5h13a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H10l-4.5 3.5V17.5a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2Z" /><path d="M8.5 10.5h.01M12 10.5h.01M15.5 10.5h.01" strokeWidth={2.5} /></>,
   logout: <><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4" /><path d="M10 16.5 5.5 12 10 7.5M5.5 12H15" /></>,
+  camera: <><path d="M4.5 8.5a2 2 0 0 1 2-2h1.8l1.4-2h4.6l1.4 2h1.8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-11a2 2 0 0 1-2-2Z" /><circle cx="12" cy="12.5" r="3.5" /></>,
+  image: <><rect x="3.5" y="4.5" width="17" height="15" rx="2.5" /><circle cx="9" cy="9.5" r="1.5" /><path d="m20.5 15.5-4.5-4.5-8.5 8.5" /></>,
 }
 
 /** Picks a glyph from a service name, so items read at a glance without per-service config. */

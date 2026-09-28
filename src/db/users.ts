@@ -1,11 +1,11 @@
 import { hashPassword, verifyPassword } from '../lib/hash'
-import { requirePermission, STAFF_ROLE } from '../lib/permissions'
+import { requirePermission, sessionUser, STAFF_ROLE } from '../lib/permissions'
 import type { Role, User } from '../types'
-import { query, queryOne, run } from './client'
+import { DbError, query, queryOne, run } from './client'
 import { ORDER_CUSTOMER_NAME } from './customers'
 import { setSetting } from './settings'
 
-const COLS = 'id, username, full_name, role, active, created_at'
+const COLS = 'id, username, full_name, role, active, created_at, photo'
 const ROLES: Role[] = ['admin', 'manager', 'cashier']
 export const ROLE_LABEL: Record<Role, string> = { admin: 'Admin', manager: 'Manager', cashier: 'Staff' }
 
@@ -27,6 +27,7 @@ export interface Profile {
   role: Role
   pin_length: number | null
   locked_until: number
+  photo: string | null
 }
 
 interface Secret {
@@ -46,10 +47,18 @@ function validatePin(pin: string) {
 }
 
 function validateProfile(username: string, fullName: string, role: Role) {
-  if (!/^[A-Za-z0-9._-]{3,32}$/.test(username)) throw new Error('Username must be 3-32 letters, numbers, . _ -')
-  if (!fullName.trim()) throw new Error('Full name is required.')
+  validateNames(username, fullName)
   if (!ROLES.includes(role)) throw new Error('Invalid role.')
 }
+
+function validateNames(username: string, fullName: string) {
+  if (!/^[A-Za-z0-9._-]{3,32}$/.test(username)) throw new Error('Username must be 3-32 letters, numbers, . _ -')
+  if (!fullName.trim()) throw new Error('Full name is required.')
+  if (fullName.trim().length > 60) throw new Error('Full name is too long (60 characters max).')
+}
+
+/** A unique-username clash in words; any other failure passes through unchanged. */
+const usernameTaken = (e: unknown) => (e instanceof DbError && e.kind === 'unique' ? new Error('Username already exists.') : e)
 
 const lockMessage = (until: number) => `Too many attempts. Try again in ${Math.ceil((until - Date.now()) / 1000)}s.`
 
@@ -85,7 +94,7 @@ async function activeSecret(id: number) {
   return s
 }
 
-const toUser = ({ id, username, full_name, role, active, created_at }: User): User => ({ id, username, full_name, role, active, created_at })
+const toUser = ({ id, username, full_name, role, active, created_at, photo }: User): User => ({ id, username, full_name, role, active, created_at, photo })
 
 async function setPin(userId: number, pin: string) {
   validatePin(pin)
@@ -142,7 +151,7 @@ export async function completeFirstRunSetup(role: 'admin' | 'cashier', pin: stri
 }
 
 export const listProfiles = () =>
-  query<Profile>('SELECT id, full_name, role, pin_length, locked_until FROM users WHERE active=1 ORDER BY full_name COLLATE NOCASE')
+  query<Profile>('SELECT id, full_name, role, pin_length, locked_until, photo FROM users WHERE active=1 ORDER BY full_name COLLATE NOCASE')
 
 export async function loginWithPin(userId: number, pin: string): Promise<User> {
   const s = await activeSecret(userId)
@@ -168,6 +177,38 @@ export const verifyOwnPin = async (userId: number, pin: string) => attempt(await
 export async function changePin(userId: number, current: string, next: string) {
   await verifyOwnPin(userId, current)
   await setPin(userId, next)
+}
+
+// ---------- My Account: the signed-in employee's own profile ----------
+// Always the session user (lib/permissions.ts), never an id from the UI, so no one edits another account here.
+// Role and active status aren't editable from My Account; only Users (users.manage) changes them.
+
+/** The signed-in employee as stored now, e.g. after a My Account edit. */
+export async function getOwnAccount(): Promise<User> {
+  const row = await queryOne<User>(`SELECT ${COLS} FROM users WHERE id=? AND active=1`, [sessionUser().id])
+  if (!row) throw new Error('This account is not available.')
+  return toUser(row)
+}
+
+export async function updateOwnProfile(input: { username: string; fullName: string }): Promise<User> {
+  const me = sessionUser()
+  const username = input.username.trim()
+  validateNames(username, input.fullName)
+  try {
+    await run(
+      "UPDATE users SET username=?, full_name=?, updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?",
+      [username, input.fullName.trim(), me.id],
+    )
+  } catch (e) {
+    throw usernameTaken(e)
+  }
+  return getOwnAccount()
+}
+
+/** Saves (or clears, with null) the photo's path; lib/avatarPhoto.ts writes the file itself. */
+export async function setOwnPhoto(path: string | null): Promise<User> {
+  await run("UPDATE users SET photo=?, updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?", [path, sessionUser().id])
+  return getOwnAccount()
 }
 
 /** Approves a sensitive action if the PIN belongs to any active admin. Failures count against every admin tried. */
@@ -214,8 +255,8 @@ async function insertUser(input: { username: string; fullName: string; role: Rol
     id = (await run('INSERT INTO users (username, full_name, password_hash, salt, role) VALUES (?,?,?,?,?)', [
       input.username, input.fullName.trim(), hash, salt, input.role,
     ])).lastId
-  } catch {
-    throw new Error('Username already exists.')
+  } catch (e) {
+    throw usernameTaken(e)
   }
   await setPin(id, input.pin)
 }
@@ -235,8 +276,8 @@ export async function updateUser(
       "UPDATE users SET username=?, full_name=?, role=?, active=?, updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?",
       [input.username, input.fullName.trim(), input.role, input.active ? 1 : 0, id],
     )
-  } catch {
-    throw new Error('Username already exists.')
+  } catch (e) {
+    throw usernameTaken(e)
   }
   // Setting a PIN also clears any lockout, so admins can unlock staff.
   if (input.newPin) await setPin(id, input.newPin)

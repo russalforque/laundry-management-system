@@ -1,6 +1,6 @@
-import { requirePermission } from '../lib/permissions'
+import { requireAdminApproval, requirePermission } from '../lib/permissions'
 import type { Customer, CustomerStats } from '../types'
-import { query, queryOne, run, transaction } from './client'
+import { query, queryOne, run, transaction, type Tx } from './client'
 
 export interface CustomerInput {
   fullName: string
@@ -14,9 +14,24 @@ export const isValidContact = (contact: string) => /^[0-9+()\-\s]{5,20}$/.test(c
 function clean(i: CustomerInput): CustomerInput {
   const c = { fullName: i.fullName.trim(), contact: i.contact.trim(), address: i.address.trim(), notes: i.notes.trim() }
   if (!c.fullName) throw new Error('Customer name is required.')
+  if (c.fullName.length > 100) throw new Error('Customer name is too long (100 characters max).')
   if (c.contact && !isValidContact(c.contact)) throw new Error('Contact number looks invalid.')
+  if (c.address.length > 300) throw new Error('Address is too long (300 characters max).')
+  if (c.notes.length > 1000) throw new Error('Notes are too long (1,000 characters max).')
   return c
 }
+
+/** Another customer with the same name and the same phone number (any formatting): almost always a double entry. */
+async function findDuplicate(tx: Pick<Tx, 'query'>, c: CustomerInput, exceptId: number | null) {
+  const digits = c.contact.replace(/\D/g, '')
+  if (!digits) return false
+  const [row] = await tx.query<{ id: number }>(
+    `SELECT id FROM customers WHERE full_name = ? COLLATE NOCASE AND ${CONTACT_DIGITS} = ? AND id IS NOT ? LIMIT 1`,
+    [c.fullName, c.contact.replace(/[\s\-()+]/g, ''), exceptId],
+  )
+  return !!row
+}
+const DUPLICATE = 'A customer with this name and phone number already exists. Search for them instead.'
 
 /** Contact with spaces, dashes, brackets and + removed, so "0917-123 4567" matches a typed "09171234567". */
 const CONTACT_DIGITS = "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(contact, ' ', ''), '-', ''), '(', ''), ')', ''), '+', '')"
@@ -42,6 +57,17 @@ export const getCustomer = (id: number) => queryOne<Customer>('SELECT * FROM cus
  */
 export const WALK_IN_CODE = 'WALK-IN'
 
+/** Latest customers first: by their most recent order, else when they were added. Legacy walk-in record excluded. */
+export const recentCustomers = (limit = 12) =>
+  query<Customer>(
+    `SELECT c.* FROM customers c LEFT JOIN orders o ON o.customer_id = c.id
+     WHERE c.customer_code <> ?
+     GROUP BY c.id
+     ORDER BY MAX(COALESCE(o.received_at, c.created_at)) DESC
+     LIMIT ?`,
+    [WALK_IN_CODE, limit],
+  )
+
 /** An order's customer as shown: the name/phone saved on a past walk-in order, else the customer record's. Needs aliases o and c. */
 export const ORDER_CUSTOMER_NAME = "COALESCE(NULLIF(o.guest_name, ''), c.full_name)"
 export const ORDER_CUSTOMER_CONTACT = "COALESCE(NULLIF(o.guest_contact, ''), c.contact)"
@@ -50,6 +76,7 @@ export async function createCustomer(input: CustomerInput): Promise<number> {
   requirePermission('customers.manage')
   const c = clean(input)
   return transaction(async (tx) => {
+    if (await findDuplicate(tx, c, null)) throw new Error(DUPLICATE)
     // Temporary unique code, replaced by the id-based code once the id is known.
     const tmp = `TMP-${Date.now()}-${Math.random().toString(36).slice(2)}`
     await tx.run('INSERT INTO customers (customer_code, full_name, contact, address, notes) VALUES (?,?,?,?,?)', [
@@ -66,15 +93,22 @@ export async function createCustomer(input: CustomerInput): Promise<number> {
 export async function updateCustomer(id: number, input: CustomerInput) {
   requirePermission('customers.manage')
   const c = clean(input)
-  await run(
-    "UPDATE customers SET full_name=?, contact=?, address=?, notes=?, updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?",
-    [c.fullName, c.contact, c.address, c.notes, id],
-  )
+  await transaction(async (tx) => {
+    const [cur] = await tx.query<{ customer_code: string }>('SELECT customer_code FROM customers WHERE id = ?', [id])
+    if (!cur) throw new Error('This customer no longer exists.')
+    if (cur.customer_code === WALK_IN_CODE) throw new Error('The walk-in record keeps past walk-in orders and can’t be edited.')
+    if (await findDuplicate(tx, c, id)) throw new Error(DUPLICATE)
+    await tx.run(
+      "UPDATE customers SET full_name=?, contact=?, address=?, notes=?, updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?",
+      [c.fullName, c.contact, c.address, c.notes, id],
+    )
+  })
 }
 
 /** Customers with any order (even cancelled) are kept for record integrity. */
 export async function deleteCustomer(id: number) {
   requirePermission('customers.manage')
+  requireAdminApproval(`customer.delete:${id}`)
   const r = await queryOne<{ n: number }>('SELECT COUNT(*) AS n FROM orders WHERE customer_id = ?', [id])
   if (r?.n) throw new Error('This customer has orders and cannot be deleted.')
   await run('DELETE FROM customers WHERE id = ?', [id])

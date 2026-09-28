@@ -24,6 +24,8 @@ export interface User {
   role: Role
   active: number
   created_at: string
+  /** Profile photo's path in the app's data folder (lib/avatarPhoto.ts); null = initials. */
+  photo: string | null
 }
 
 /** Calculation class: per_kg = decimal weight, per_piece = whole units, fixed = always 1. */
@@ -57,8 +59,13 @@ export interface Inclusion {
 
 export type PaymentStatus = 'unpaid' | 'partial' | 'paid'
 export type PaymentMethod = 'cash' | 'gcash' | 'other'
-/** Workflow status only — payment (PaymentStatus) and machines (MachineStatus) are tracked separately. 'released' = Completed. */
-export type OrderStatus = 'received' | 'washing' | 'drying' | 'ready' | 'released' | 'cancelled'
+/**
+ * Overall order status: Received → Processing → Ready for Pickup → Completed ('released'), or Cancelled.
+ * Processing (washing, drying and folding, all run by hand in the shop) is stored as 'washing': the orders.status CHECK
+ * constraint predates it (see db/migrations.ts). Always write it as PROCESSING (lib/orders.ts), never the literal.
+ * Payment (PaymentStatus) is tracked separately.
+ */
+export type OrderStatus = 'received' | 'washing' | 'ready' | 'released' | 'cancelled'
 
 export interface OrderRow {
   id: number
@@ -80,42 +87,11 @@ export interface OrderRow {
   /** Past walk-in orders only: name/phone given at the counter ('' otherwise; new orders never set them). */
   guest_name: string
   guest_contact: string
-}
-
-export type MachineType = 'washer' | 'dryer'
-/** Available → In Use (timer running) → Done (timer over, laundry still inside) → Available after Mark as Unloaded. out_of_service = Inactive. */
-export type MachineStatus = 'available' | 'in_use' | 'done' | 'out_of_service'
-
-export interface Machine {
-  id: number
-  code: string
-  type: MachineType
-  notes: string
-  out_of_service: number
-  /** Preset cycle length used every time this machine is started. */
-  cycle_minutes: number
-  /** Open assignment, if any (joined in by listMachines). */
-  order_id: number | null
-  order_number: string | null
-  customer_name: string | null
-  started_at: string | null
-  duration_minutes: number | null
-  expected_end_at: string | null
-}
-
-export interface MachineAssignment {
-  id: number
-  machine_id: number | null
-  machine_code: string
-  machine_type: MachineType
-  order_id: number
-  started_at: string
-  ended_at: string | null
-  end_reason: 'finished' | 'changed' | 'status' | null
-  /** Timer snapshot taken at start; null on assignments made before machine timers. */
-  duration_minutes: number | null
-  expected_end_at: string | null
-  user_name: string | null
+  /** When Start Processing / Mark Ready for Pickup were tapped, and by whom (null until then). */
+  processing_at: string | null
+  processing_by: number | null
+  ready_at: string | null
+  ready_by: number | null
 }
 
 export interface OrderItemRow {
